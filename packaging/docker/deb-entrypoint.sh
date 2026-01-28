@@ -1,0 +1,53 @@
+#!/bin/bash
+#
+# Entrypoint script for DEB Docker build
+#
+
+set -euo pipefail
+
+PKG_NAME="wifisync"
+PKG_VERSION="${PKG_VERSION:-0.1.0}"
+
+echo "==> Building Wifisync DEB v${PKG_VERSION}"
+
+# Setup build directory
+echo "==> Setting up build directory..."
+BUILD_DIR="/tmp/build-deb"
+PKG_DIR="${BUILD_DIR}/${PKG_NAME}-${PKG_VERSION}"
+
+rm -rf "$BUILD_DIR"
+mkdir -p "$PKG_DIR"
+
+# Copy source files
+rsync -a \
+    --exclude='target' \
+    --exclude='.git' \
+    --exclude='dist' \
+    --exclude='build-deb' \
+    /build/ "$PKG_DIR/"
+
+# Copy debian directory
+cp -r /build/packaging/deb/debian "$PKG_DIR/"
+chmod +x "$PKG_DIR/debian/rules"
+
+# Create orig tarball
+echo "==> Creating orig tarball..."
+cd "$BUILD_DIR"
+tar --exclude='debian' -czf "${PKG_NAME}_${PKG_VERSION}.orig.tar.gz" "${PKG_NAME}-${PKG_VERSION}"
+
+# Build package
+echo "==> Building DEB package..."
+cd "$PKG_DIR"
+# -us -uc: skip signing, -b: binary only, -d: skip build-dep checks (rust via rustup)
+dpkg-buildpackage -us -uc -b -d
+
+# Copy output to mounted volume
+echo "==> Copying packages to output directory..."
+mkdir -p /build/dist
+cp "$BUILD_DIR"/*.deb /build/dist/ 2>/dev/null || true
+cp "$BUILD_DIR"/*.changes /build/dist/ 2>/dev/null || true
+cp "$BUILD_DIR"/*.buildinfo /build/dist/ 2>/dev/null || true
+
+echo "==> Build complete!"
+echo "==> Packages:"
+ls -la /build/dist/*.deb 2>/dev/null || echo "No DEB files found"

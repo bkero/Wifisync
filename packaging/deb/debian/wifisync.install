@@ -1,0 +1,2 @@
+target/release/wifisync usr/bin
+packaging/systemd/wifisync-agent.service usr/lib/systemd/user

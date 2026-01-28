@@ -1,0 +1,29 @@
+[Unit]
+Description=Wifisync Secret Agent for NetworkManager
+Documentation=https://github.com/bkero/wifisync
+After=dbus.service
+Wants=dbus.service
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/wifisync agent start
+Restart=on-failure
+RestartSec=5
+
+# Security hardening
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=read-only
+PrivateTmp=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+
+# Allow access to user's data directory
+ReadWritePaths=%h/.local/share/wifisync
+
+# D-Bus access is required
+Environment=DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/%U/bus
+
+[Install]
+WantedBy=default.target

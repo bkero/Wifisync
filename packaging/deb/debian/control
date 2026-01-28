@@ -1,0 +1,30 @@
+Source: wifisync
+Section: net
+Priority: optional
+Maintainer: Wifisync Developers <dev@wifisync.example.com>
+Build-Depends: debhelper-compat (= 13),
+               libdbus-1-dev,
+               pkg-config
+Standards-Version: 4.6.2
+Homepage: https://github.com/bkero/wifisync
+Vcs-Browser: https://github.com/bkero/wifisync
+Vcs-Git: https://github.com/bkero/wifisync.git
+Rules-Requires-Root: no
+
+Package: wifisync
+Architecture: any
+Depends: ${shlibs:Depends},
+         ${misc:Depends},
+         network-manager,
+         dbus
+Description: Wifi credential synchronization tool
+ Wifisync is a tool for synchronizing wifi credentials across devices.
+ It securely stores wifi passwords in an encrypted database and provides
+ them to NetworkManager on-demand via a Secret Agent daemon.
+ .
+ Features:
+  - Extract wifi credentials from NetworkManager
+  - Encrypted local storage with ChaCha20-Poly1305
+  - Filter out enterprise and open networks
+  - Export/import credentials for sharing
+  - Secret Agent daemon for on-demand password delivery

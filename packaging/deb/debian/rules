@@ -1,0 +1,28 @@
+#!/usr/bin/make -f
+
+export DEB_BUILD_MAINT_OPTIONS = hardening=+all
+export CARGO_HOME = $(CURDIR)/debian/.cargo
+
+%:
+	dh $@
+
+override_dh_auto_build:
+	cargo build --release --locked
+
+override_dh_auto_install:
+	# Install binary
+	install -Dm755 target/release/wifisync debian/wifisync/usr/bin/wifisync
+
+	# Install systemd user service
+	install -Dm644 packaging/systemd/wifisync-agent.service \
+		debian/wifisync/usr/lib/systemd/user/wifisync-agent.service
+
+override_dh_auto_test:
+	cargo test --release --locked
+
+override_dh_auto_clean:
+	cargo clean || true
+	rm -rf $(CARGO_HOME)
+
+# Skip dh_installsystemd - user service is installed manually above
+override_dh_installsystemd:

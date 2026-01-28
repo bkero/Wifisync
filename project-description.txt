@@ -1,0 +1,9 @@
+Please read CLAUDE.md and AGENTS.md before beginning.
+
+Wifisync is a project whose goal is to allow users to sync a set of saved Wifi data between devices and to other users.
+
+Users should be able to select a collection of wifi credentials (such as for coffee shops) and advertise these credentials on a platform. Other devices on that platform should be able to consume them. Personal networks must be able to be excluded.
+
+For example, a user using Fedora Linux with NetworkManager should be able to export their saved networks to an Android device and vice-versa. The end result should be apps that a user will install on Linux (supporting multiple network maangers, initially only NetworkManager), Android, Windows (in the future), and iOS (in the future)
+
+Networks that use WPA-Enterprise or other username/password authentication should not be included. Networks that do not have a password should not be included either.

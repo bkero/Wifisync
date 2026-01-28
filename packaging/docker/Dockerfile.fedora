@@ -1,0 +1,34 @@
+# Dockerfile for building Wifisync RPM packages
+FROM fedora:41
+
+LABEL maintainer="Wifisync Developers <dev@wifisync.example.com>"
+LABEL description="Build environment for Wifisync RPM packages"
+
+# Install build dependencies
+RUN dnf install -y \
+    rpm-build \
+    rpmdevtools \
+    gcc \
+    dbus-devel \
+    systemd-rpm-macros \
+    rsync \
+    && dnf clean all
+
+# Install Rust via rustup
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable
+ENV PATH="/root/.cargo/bin:${PATH}"
+
+# Verify Rust installation
+RUN rustc --version && cargo --version
+
+# Setup RPM build tree
+RUN rpmdev-setuptree
+
+# Set working directory
+WORKDIR /build
+
+# Copy entrypoint script
+COPY docker/rpm-entrypoint.sh /usr/local/bin/entrypoint.sh
+RUN chmod +x /usr/local/bin/entrypoint.sh
+
+ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]

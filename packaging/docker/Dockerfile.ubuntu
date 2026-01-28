@@ -1,0 +1,37 @@
+# Dockerfile for building Wifisync DEB packages
+FROM ubuntu:24.04
+
+LABEL maintainer="Wifisync Developers <dev@wifisync.example.com>"
+LABEL description="Build environment for Wifisync DEB packages"
+
+# Avoid interactive prompts
+ENV DEBIAN_FRONTEND=noninteractive
+
+# Install build dependencies
+RUN apt-get update && apt-get install -y \
+    build-essential \
+    debhelper \
+    devscripts \
+    dpkg-dev \
+    fakeroot \
+    libdbus-1-dev \
+    pkg-config \
+    curl \
+    rsync \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install Rust via rustup
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable
+ENV PATH="/root/.cargo/bin:${PATH}"
+
+# Verify Rust installation
+RUN rustc --version && cargo --version
+
+# Set working directory
+WORKDIR /build
+
+# Copy entrypoint script
+COPY docker/deb-entrypoint.sh /usr/local/bin/entrypoint.sh
+RUN chmod +x /usr/local/bin/entrypoint.sh
+
+ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]

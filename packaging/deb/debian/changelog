@@ -1,0 +1,10 @@
+wifisync (0.1.0-1) unstable; urgency=medium
+
+  * Initial release.
+  * Core credential extraction and storage
+  * NetworkManager adapter with Secret Agent support
+  * Encrypted storage with ChaCha20-Poly1305
+  * Credential filtering (enterprise, open, exclusion list)
+  * Export/import for credential sharing
+
+ -- Wifisync Developers <dev@wifisync.example.com>  Mon, 27 Jan 2025 00:00:00 +0000

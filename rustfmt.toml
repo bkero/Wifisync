@@ -1,0 +1,17 @@
+# Rustfmt configuration for Wifisync
+edition = "2021"
+max_width = 100
+tab_spaces = 4
+newline_style = "Unix"
+use_small_heuristics = "Default"
+
+# Import organization
+imports_granularity = "Module"
+group_imports = "StdExternalCrate"
+reorder_imports = true
+
+# Formatting preferences
+format_code_in_doc_comments = true
+format_strings = false
+wrap_comments = true
+comment_width = 100
