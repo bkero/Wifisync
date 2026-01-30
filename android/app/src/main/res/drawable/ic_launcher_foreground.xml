@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- Background circle -->
+    <path
+        android:fillColor="#6200EE"
+        android:pathData="M54,54m-40,0a40,40 0,1 1,80 0a40,40 0,1 1,-80 0"/>
+    <!-- WiFi symbol -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M54,35c-8.28,0 -16.13,3.15 -22.13,8.87l4.24,4.24C40.45,44.19 47.02,42 54,42s13.55,2.19 17.89,6.11l4.24,-4.24C70.13,38.15 62.28,35 54,35z"/>
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M54,47c-5.52,0 -10.74,2.1 -14.73,5.91l4.24,4.24C46.36,54.56 50.05,53 54,53s7.64,1.56 10.49,4.15l4.24,-4.24C64.74,49.1 59.52,47 54,47z"/>
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M54,59c-2.76,0 -5.35,1.05 -7.33,2.95l7.33,7.33l7.33,-7.33C59.35,60.05 56.76,59 54,59z"/>
+</vector>
