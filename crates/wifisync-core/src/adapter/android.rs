@@ -504,9 +504,14 @@ impl AndroidJniCallback for MockAndroidCallback {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use secrecy::ExposeSecret;
+
+    // =========================================================================
+    // Adapter Creation Tests
+    // =========================================================================
 
     #[test]
-    fn test_api_level_check() {
+    fn test_api_level_check_rejects_old_versions() {
         let callback = MockAndroidCallback {
             api_level: 28, // Android 9 - too old
             ..Default::default()
@@ -521,27 +526,180 @@ mod tests {
     }
 
     #[test]
-    fn test_adapter_creation() {
+    fn test_api_level_check_accepts_api_29() {
+        let callback = MockAndroidCallback {
+            api_level: 29, // Android 10 - minimum supported
+            ..Default::default()
+        };
+
+        let result = AndroidAdapter::new(Box::new(callback));
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_api_level_check_accepts_newer_versions() {
+        for api_level in [30, 31, 32, 33, 34] {
+            let callback = MockAndroidCallback {
+                api_level,
+                ..Default::default()
+            };
+
+            let result = AndroidAdapter::new(Box::new(callback));
+            assert!(result.is_ok(), "API level {} should be accepted", api_level);
+        }
+    }
+
+    #[test]
+    fn test_adapter_creation_non_rooted() {
         let callback = MockAndroidCallback::default();
         let adapter = AndroidAdapter::new(Box::new(callback)).unwrap();
 
         assert_eq!(adapter.capabilities().api_level, 30);
         assert!(!adapter.capabilities().has_root);
         assert!(!adapter.capabilities().extraction_supported);
+        assert_eq!(adapter.capabilities().suggestion_limit, 50);
     }
 
     #[test]
-    fn test_platform_info() {
+    fn test_adapter_creation_rooted() {
+        let callback = MockAndroidCallback {
+            has_root: true,
+            ..Default::default()
+        };
+        let adapter = AndroidAdapter::new(Box::new(callback)).unwrap();
+
+        assert!(adapter.capabilities().has_root);
+        assert!(adapter.capabilities().extraction_supported);
+    }
+
+    // =========================================================================
+    // Platform Info Tests
+    // =========================================================================
+
+    #[test]
+    fn test_platform_info_basic() {
         let callback = MockAndroidCallback::default();
         let adapter = AndroidAdapter::new(Box::new(callback)).unwrap();
 
         let info = adapter.platform_info();
         assert_eq!(info.name, "Android WifiManager");
-        assert!(info.features.contains(&"secret_agent:unsupported".to_string()));
+        assert_eq!(info.version, Some("API 30".to_string()));
     }
 
     #[test]
-    fn test_xml_parsing() {
+    fn test_platform_info_features_non_rooted() {
+        let callback = MockAndroidCallback::default();
+        let adapter = AndroidAdapter::new(Box::new(callback)).unwrap();
+
+        let info = adapter.platform_info();
+        assert!(info.features.contains(&"secret_agent:unsupported".to_string()));
+        assert!(info.features.contains(&"root:false".to_string()));
+        assert!(info.features.contains(&"extraction:unsupported".to_string()));
+        assert!(info.features.contains(&"api_level:30".to_string()));
+    }
+
+    #[test]
+    fn test_platform_info_features_rooted() {
+        let callback = MockAndroidCallback {
+            has_root: true,
+            ..Default::default()
+        };
+        let adapter = AndroidAdapter::new(Box::new(callback)).unwrap();
+
+        let info = adapter.platform_info();
+        assert!(info.features.contains(&"root:true".to_string()));
+        assert!(info.features.contains(&"extraction:supported".to_string()));
+    }
+
+    #[test]
+    fn test_source_platform() {
+        let callback = MockAndroidCallback::default();
+        let adapter = AndroidAdapter::new(Box::new(callback)).unwrap();
+
+        assert_eq!(adapter.source_platform(), SourcePlatform::Android);
+    }
+
+    // =========================================================================
+    // Security Type Conversion Tests
+    // =========================================================================
+
+    #[test]
+    fn test_security_type_conversion_all_types() {
+        assert_eq!(android_security_type_to_enum(0), SecurityType::Open);
+        assert_eq!(android_security_type_to_enum(1), SecurityType::Wep);
+        assert_eq!(android_security_type_to_enum(2), SecurityType::Wpa2Psk);
+        assert_eq!(android_security_type_to_enum(3), SecurityType::Wpa2Enterprise);
+        assert_eq!(android_security_type_to_enum(4), SecurityType::Wpa3Psk);
+        assert_eq!(android_security_type_to_enum(5), SecurityType::Wpa2Wpa3Psk);
+        assert_eq!(android_security_type_to_enum(6), SecurityType::Wpa3Enterprise);
+    }
+
+    #[test]
+    fn test_security_type_conversion_unknown() {
+        assert_eq!(android_security_type_to_enum(7), SecurityType::Unknown);
+        assert_eq!(android_security_type_to_enum(100), SecurityType::Unknown);
+        assert_eq!(android_security_type_to_enum(-1), SecurityType::Unknown);
+    }
+
+    // =========================================================================
+    // XML Helper Function Tests
+    // =========================================================================
+
+    #[test]
+    fn test_extract_string_value() {
+        assert_eq!(
+            extract_string_value(r#"<string name="SSID">"MyNetwork"</string>"#),
+            Some("\"MyNetwork\"".to_string())
+        );
+        assert_eq!(
+            extract_string_value(r#"<string name="Key">value</string>"#),
+            Some("value".to_string())
+        );
+        assert_eq!(extract_string_value(r#"<string name="Empty"></string>"#), None);
+        assert_eq!(extract_string_value(r#"invalid"#), None);
+    }
+
+    #[test]
+    fn test_extract_int_value() {
+        assert_eq!(
+            extract_int_value(r#"<int name="SecurityType" value="2" />"#),
+            Some(2)
+        );
+        assert_eq!(
+            extract_int_value(r#"<int name="Priority" value="100" />"#),
+            Some(100)
+        );
+        assert_eq!(
+            extract_int_value(r#"<int name="Negative" value="-5" />"#),
+            Some(-5)
+        );
+        assert_eq!(extract_int_value(r#"<int name="Invalid" value="abc" />"#), None);
+        assert_eq!(extract_int_value(r#"no value attribute"#), None);
+    }
+
+    #[test]
+    fn test_extract_boolean_value() {
+        assert_eq!(
+            extract_boolean_value(r#"<boolean name="Hidden" value="true" />"#),
+            Some(true)
+        );
+        assert_eq!(
+            extract_boolean_value(r#"<boolean name="Hidden" value="false" />"#),
+            Some(false)
+        );
+        assert_eq!(
+            extract_boolean_value(r#"<boolean name="Invalid" value="yes" />"#),
+            None
+        );
+        assert_eq!(extract_boolean_value(r#"no value"#), None);
+    }
+
+    // =========================================================================
+    // XML Parsing Tests
+    // =========================================================================
+
+    #[test]
+    fn test_xml_parsing_single_network() {
         let xml = r#"
 <WifiConfigStoreData>
   <NetworkList>
@@ -568,17 +726,365 @@ mod tests {
 
         assert_eq!(credentials.len(), 1);
         assert_eq!(credentials[0].ssid, "TestNetwork");
+        assert_eq!(credentials[0].password.expose_secret(), "password123");
         assert_eq!(credentials[0].security_type, SecurityType::Wpa2Psk);
+        assert!(!credentials[0].hidden);
+        assert_eq!(credentials[0].source_platform, SourcePlatform::Android);
     }
 
     #[test]
-    fn test_security_type_conversion() {
-        assert_eq!(android_security_type_to_enum(0), SecurityType::Open);
-        assert_eq!(android_security_type_to_enum(2), SecurityType::Wpa2Psk);
-        assert_eq!(android_security_type_to_enum(4), SecurityType::Wpa3Psk);
-        assert_eq!(
-            android_security_type_to_enum(3),
-            SecurityType::Wpa2Enterprise
+    fn test_xml_parsing_multiple_networks() {
+        let xml = r#"
+<WifiConfigStoreData>
+  <NetworkList>
+    <Network>
+      <WifiConfiguration>
+        <string name="SSID">"HomeWifi"</string>
+        <string name="PreSharedKey">"homepass"</string>
+        <int name="SecurityType" value="2" />
+      </WifiConfiguration>
+    </Network>
+    <Network>
+      <WifiConfiguration>
+        <string name="SSID">"OfficeWifi"</string>
+        <string name="PreSharedKey">"officepass"</string>
+        <int name="SecurityType" value="4" />
+      </WifiConfiguration>
+    </Network>
+    <Network>
+      <WifiConfiguration>
+        <string name="SSID">"CafeWifi"</string>
+        <string name="PreSharedKey">"cafepass"</string>
+        <int name="SecurityType" value="5" />
+      </WifiConfiguration>
+    </Network>
+  </NetworkList>
+</WifiConfigStoreData>
+"#;
+
+        let callback = MockAndroidCallback::default();
+        let adapter = AndroidAdapter::new(Box::new(callback)).unwrap();
+        let credentials = adapter.parse_wifi_config_store(xml).unwrap();
+
+        assert_eq!(credentials.len(), 3);
+
+        assert_eq!(credentials[0].ssid, "HomeWifi");
+        assert_eq!(credentials[0].security_type, SecurityType::Wpa2Psk);
+
+        assert_eq!(credentials[1].ssid, "OfficeWifi");
+        assert_eq!(credentials[1].security_type, SecurityType::Wpa3Psk);
+
+        assert_eq!(credentials[2].ssid, "CafeWifi");
+        assert_eq!(credentials[2].security_type, SecurityType::Wpa2Wpa3Psk);
+    }
+
+    #[test]
+    fn test_xml_parsing_hidden_network() {
+        let xml = r#"
+<WifiConfigStoreData>
+  <NetworkList>
+    <Network>
+      <WifiConfiguration>
+        <string name="SSID">"HiddenNetwork"</string>
+        <string name="PreSharedKey">"secretpass"</string>
+        <int name="SecurityType" value="2" />
+        <boolean name="HiddenSSID" value="true" />
+      </WifiConfiguration>
+    </Network>
+  </NetworkList>
+</WifiConfigStoreData>
+"#;
+
+        let callback = MockAndroidCallback::default();
+        let adapter = AndroidAdapter::new(Box::new(callback)).unwrap();
+        let credentials = adapter.parse_wifi_config_store(xml).unwrap();
+
+        assert_eq!(credentials.len(), 1);
+        assert!(credentials[0].hidden);
+    }
+
+    #[test]
+    fn test_xml_parsing_skips_enterprise_networks() {
+        let xml = r#"
+<WifiConfigStoreData>
+  <NetworkList>
+    <Network>
+      <WifiConfiguration>
+        <string name="SSID">"PersonalWifi"</string>
+        <string name="PreSharedKey">"personalpass"</string>
+        <int name="SecurityType" value="2" />
+      </WifiConfiguration>
+    </Network>
+    <Network>
+      <WifiConfiguration>
+        <string name="SSID">"CorpWifi"</string>
+        <string name="PreSharedKey">"corppass"</string>
+        <int name="SecurityType" value="3" />
+      </WifiConfiguration>
+    </Network>
+    <Network>
+      <WifiConfiguration>
+        <string name="SSID">"WPA3Enterprise"</string>
+        <string name="PreSharedKey">"wpa3pass"</string>
+        <int name="SecurityType" value="6" />
+      </WifiConfiguration>
+    </Network>
+  </NetworkList>
+</WifiConfigStoreData>
+"#;
+
+        let callback = MockAndroidCallback::default();
+        let adapter = AndroidAdapter::new(Box::new(callback)).unwrap();
+        let credentials = adapter.parse_wifi_config_store(xml).unwrap();
+
+        // Should only get the personal network, enterprise networks are skipped
+        assert_eq!(credentials.len(), 1);
+        assert_eq!(credentials[0].ssid, "PersonalWifi");
+    }
+
+    #[test]
+    fn test_xml_parsing_skips_open_networks() {
+        let xml = r#"
+<WifiConfigStoreData>
+  <NetworkList>
+    <Network>
+      <WifiConfiguration>
+        <string name="SSID">"SecureWifi"</string>
+        <string name="PreSharedKey">"securepass"</string>
+        <int name="SecurityType" value="2" />
+      </WifiConfiguration>
+    </Network>
+    <Network>
+      <WifiConfiguration>
+        <string name="SSID">"FreeWifi"</string>
+        <string name="PreSharedKey">""</string>
+        <int name="SecurityType" value="0" />
+      </WifiConfiguration>
+    </Network>
+  </NetworkList>
+</WifiConfigStoreData>
+"#;
+
+        let callback = MockAndroidCallback::default();
+        let adapter = AndroidAdapter::new(Box::new(callback)).unwrap();
+        let credentials = adapter.parse_wifi_config_store(xml).unwrap();
+
+        // Should only get the secure network, open network is skipped
+        assert_eq!(credentials.len(), 1);
+        assert_eq!(credentials[0].ssid, "SecureWifi");
+    }
+
+    #[test]
+    fn test_xml_parsing_empty_network_list() {
+        let xml = r#"
+<WifiConfigStoreData>
+  <NetworkList>
+  </NetworkList>
+</WifiConfigStoreData>
+"#;
+
+        let callback = MockAndroidCallback::default();
+        let adapter = AndroidAdapter::new(Box::new(callback)).unwrap();
+        let credentials = adapter.parse_wifi_config_store(xml).unwrap();
+
+        assert!(credentials.is_empty());
+    }
+
+    #[test]
+    fn test_xml_parsing_network_without_password() {
+        let xml = r#"
+<WifiConfigStoreData>
+  <NetworkList>
+    <Network>
+      <WifiConfiguration>
+        <string name="SSID">"NoPassword"</string>
+        <int name="SecurityType" value="2" />
+      </WifiConfiguration>
+    </Network>
+  </NetworkList>
+</WifiConfigStoreData>
+"#;
+
+        let callback = MockAndroidCallback::default();
+        let adapter = AndroidAdapter::new(Box::new(callback)).unwrap();
+        let credentials = adapter.parse_wifi_config_store(xml).unwrap();
+
+        // Network without password should be skipped
+        assert!(credentials.is_empty());
+    }
+
+    // =========================================================================
+    // Async Operation Tests
+    // =========================================================================
+
+    #[tokio::test]
+    async fn test_list_networks_with_suggestions() {
+        let callback = MockAndroidCallback {
+            suggestions: vec![
+                SuggestionInfo {
+                    id: "id1".to_string(),
+                    ssid: "Network1".to_string(),
+                    security_type: SecurityType::Wpa2Psk,
+                    hidden: false,
+                    installed_at: 1000,
+                },
+                SuggestionInfo {
+                    id: "id2".to_string(),
+                    ssid: "Network2".to_string(),
+                    security_type: SecurityType::Wpa3Psk,
+                    hidden: true,
+                    installed_at: 2000,
+                },
+            ],
+            ..Default::default()
+        };
+
+        let adapter = AndroidAdapter::new(Box::new(callback)).unwrap();
+        let networks = adapter.list_networks().await.unwrap();
+
+        assert_eq!(networks.len(), 2);
+        assert_eq!(networks[0].ssid, "Network1");
+        assert_eq!(networks[0].security_type, SecurityType::Wpa2Psk);
+        assert!(!networks[0].hidden);
+        assert_eq!(networks[0].system_id, Some("id1".to_string()));
+
+        assert_eq!(networks[1].ssid, "Network2");
+        assert!(networks[1].hidden);
+    }
+
+    #[tokio::test]
+    async fn test_list_networks_empty() {
+        let callback = MockAndroidCallback::default();
+        let adapter = AndroidAdapter::new(Box::new(callback)).unwrap();
+        let networks = adapter.list_networks().await.unwrap();
+
+        assert!(networks.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_create_profile() {
+        let callback = MockAndroidCallback::default();
+        let adapter = AndroidAdapter::new(Box::new(callback)).unwrap();
+
+        let credential = crate::WifiCredential::new(
+            "TestNetwork",
+            "testpassword",
+            SecurityType::Wpa2Psk,
+            SourcePlatform::Manual,
         );
+
+        let result = adapter.create_profile(&credential).await;
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), "suggestion_TestNetwork");
+    }
+
+    #[tokio::test]
+    async fn test_delete_profile() {
+        let callback = MockAndroidCallback::default();
+        let adapter = AndroidAdapter::new(Box::new(callback)).unwrap();
+
+        let result = adapter.delete_profile("some_id").await;
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_get_credentials_without_root() {
+        let callback = MockAndroidCallback {
+            has_root: false,
+            ..Default::default()
+        };
+        let adapter = AndroidAdapter::new(Box::new(callback)).unwrap();
+
+        let result = adapter.get_credentials("AnyNetwork").await;
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("root access"));
+    }
+
+    #[tokio::test]
+    async fn test_get_credentials_with_root() {
+        let xml = r#"
+<WifiConfigStoreData>
+  <NetworkList>
+    <Network>
+      <WifiConfiguration>
+        <string name="SSID">"TargetNetwork"</string>
+        <string name="PreSharedKey">"targetpass"</string>
+        <int name="SecurityType" value="2" />
+      </WifiConfiguration>
+    </Network>
+  </NetworkList>
+</WifiConfigStoreData>
+"#;
+
+        let callback = MockAndroidCallback {
+            has_root: true,
+            wifi_config_xml: Some(xml.to_string()),
+            ..Default::default()
+        };
+        let adapter = AndroidAdapter::new(Box::new(callback)).unwrap();
+
+        let result = adapter.get_credentials("TargetNetwork").await;
+        assert!(result.is_ok());
+
+        let cred = result.unwrap();
+        assert_eq!(cred.ssid, "TargetNetwork");
+        assert_eq!(cred.password.expose_secret(), "targetpass");
+    }
+
+    #[tokio::test]
+    async fn test_get_credentials_network_not_found() {
+        let xml = r#"
+<WifiConfigStoreData>
+  <NetworkList>
+    <Network>
+      <WifiConfiguration>
+        <string name="SSID">"OtherNetwork"</string>
+        <string name="PreSharedKey">"otherpass"</string>
+        <int name="SecurityType" value="2" />
+      </WifiConfiguration>
+    </Network>
+  </NetworkList>
+</WifiConfigStoreData>
+"#;
+
+        let callback = MockAndroidCallback {
+            has_root: true,
+            wifi_config_xml: Some(xml.to_string()),
+            ..Default::default()
+        };
+        let adapter = AndroidAdapter::new(Box::new(callback)).unwrap();
+
+        let result = adapter.get_credentials("NonExistent").await;
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("not found"));
+    }
+
+    // =========================================================================
+    // Capability Refresh Tests
+    // =========================================================================
+
+    #[test]
+    fn test_refresh_capabilities() {
+        let callback = MockAndroidCallback {
+            suggestions: vec![
+                SuggestionInfo {
+                    id: "id1".to_string(),
+                    ssid: "Net1".to_string(),
+                    security_type: SecurityType::Wpa2Psk,
+                    hidden: false,
+                    installed_at: 1000,
+                },
+            ],
+            ..Default::default()
+        };
+
+        let mut adapter = AndroidAdapter::new(Box::new(callback)).unwrap();
+
+        // Initially suggestion_count is 0 (not refreshed yet)
+        assert_eq!(adapter.capabilities().suggestion_count, 0);
+
+        // After refresh, should reflect actual count
+        adapter.refresh_capabilities();
+        assert_eq!(adapter.capabilities().suggestion_count, 1);
     }
 }

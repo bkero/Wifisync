@@ -520,20 +520,358 @@ fn string_to_jstring(env: &mut JNIEnv, s: &str) -> jstring {
 mod tests {
     use super::*;
 
+    // =========================================================================
+    // JSON Error Response Tests
+    // =========================================================================
+
     #[test]
-    fn test_json_error() {
+    fn test_json_error_basic() {
         let error = json_error("Test error");
-        assert!(error.contains("success"));
-        assert!(error.contains("false"));
-        assert!(error.contains("Test error"));
+        assert!(error.contains(r#""success":false"#));
+        assert!(error.contains(r#""error":"Test error""#));
     }
 
     #[test]
-    fn test_api_response_serialization() {
+    fn test_json_error_escapes_quotes() {
+        let error = json_error(r#"Error with "quotes""#);
+        assert!(error.contains(r#"\"quotes\""#));
+        // Should be valid JSON
+        let parsed: serde_json::Value = serde_json::from_str(&error).unwrap();
+        assert!(!parsed["success"].as_bool().unwrap());
+    }
+
+    #[test]
+    fn test_json_error_empty_message() {
+        let error = json_error("");
+        let parsed: serde_json::Value = serde_json::from_str(&error).unwrap();
+        assert!(!parsed["success"].as_bool().unwrap());
+        assert_eq!(parsed["error"].as_str().unwrap(), "");
+    }
+
+    #[test]
+    fn test_json_error_special_characters() {
+        let error = json_error("Error: path/to/file\nNew line");
+        // Should be parseable (newlines are valid in JSON strings)
+        assert!(error.contains("success"));
+        assert!(error.contains("false"));
+    }
+
+    // =========================================================================
+    // ApiResponse Tests
+    // =========================================================================
+
+    #[test]
+    fn test_api_response_success_with_string() {
         let response = ApiResponse::success("test data");
         let json = serde_json::to_string(&response).unwrap();
-        assert!(json.contains("success"));
-        assert!(json.contains("true"));
-        assert!(json.contains("test data"));
+
+        assert!(json.contains(r#""success":true"#));
+        assert!(json.contains(r#""data":"test data""#));
+        assert!(!json.contains("error"));
+        assert!(!json.contains("message"));
+    }
+
+    #[test]
+    fn test_api_response_success_with_struct() {
+        let summary = CredentialSummary {
+            id: "abc-123".to_string(),
+            ssid: "TestNetwork".to_string(),
+            security_type: "Wpa2Psk".to_string(),
+            hidden: false,
+            managed: true,
+            tags: vec!["home".to_string(), "trusted".to_string()],
+        };
+
+        let response = ApiResponse::success(summary);
+        let json = serde_json::to_string(&response).unwrap();
+
+        assert!(json.contains(r#""success":true"#));
+        assert!(json.contains(r#""ssid":"TestNetwork""#));
+        assert!(json.contains(r#""security_type":"Wpa2Psk""#));
+        assert!(json.contains(r#""managed":true"#));
+        assert!(json.contains(r#""tags":["home","trusted"]"#));
+    }
+
+    #[test]
+    fn test_api_response_success_with_vec() {
+        let summaries = vec![
+            CredentialSummary {
+                id: "1".to_string(),
+                ssid: "Net1".to_string(),
+                security_type: "Wpa2Psk".to_string(),
+                hidden: false,
+                managed: false,
+                tags: vec![],
+            },
+            CredentialSummary {
+                id: "2".to_string(),
+                ssid: "Net2".to_string(),
+                security_type: "Wpa3Psk".to_string(),
+                hidden: true,
+                managed: true,
+                tags: vec!["office".to_string()],
+            },
+        ];
+
+        let response = ApiResponse::success(summaries);
+        let json = serde_json::to_string(&response).unwrap();
+
+        let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
+        assert!(parsed["success"].as_bool().unwrap());
+        assert_eq!(parsed["data"].as_array().unwrap().len(), 2);
+    }
+
+    #[test]
+    fn test_api_response_success_message() {
+        let response = ApiResponse::<()>::success_message("Operation completed");
+        let json = serde_json::to_string(&response).unwrap();
+
+        assert!(json.contains(r#""success":true"#));
+        assert!(json.contains(r#""message":"Operation completed""#));
+        assert!(!json.contains("data"));
+        assert!(!json.contains("error"));
+    }
+
+    // =========================================================================
+    // CredentialSummary Tests
+    // =========================================================================
+
+    #[test]
+    fn test_credential_summary_serialization() {
+        let summary = CredentialSummary {
+            id: "uuid-here".to_string(),
+            ssid: "MyWifi".to_string(),
+            security_type: "Wpa2Psk".to_string(),
+            hidden: false,
+            managed: false,
+            tags: vec![],
+        };
+
+        let json = serde_json::to_string(&summary).unwrap();
+        let parsed: CredentialSummary = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(parsed.id, "uuid-here");
+        assert_eq!(parsed.ssid, "MyWifi");
+        assert_eq!(parsed.security_type, "Wpa2Psk");
+        assert!(!parsed.hidden);
+        assert!(!parsed.managed);
+        assert!(parsed.tags.is_empty());
+    }
+
+    #[test]
+    fn test_credential_summary_with_tags() {
+        let summary = CredentialSummary {
+            id: "id".to_string(),
+            ssid: "TaggedNet".to_string(),
+            security_type: "Wpa3Psk".to_string(),
+            hidden: true,
+            managed: true,
+            tags: vec!["work".to_string(), "secure".to_string(), "vpn".to_string()],
+        };
+
+        let json = serde_json::to_string(&summary).unwrap();
+        assert!(json.contains(r#""tags":["work","secure","vpn"]"#));
+    }
+
+    // =========================================================================
+    // CredentialDetail Tests
+    // =========================================================================
+
+    #[test]
+    fn test_credential_detail_without_password() {
+        let detail = CredentialDetail {
+            id: "id".to_string(),
+            ssid: "SecureNet".to_string(),
+            security_type: "Wpa3Psk".to_string(),
+            password: None,
+            hidden: false,
+            managed: false,
+            tags: vec![],
+        };
+
+        let json = serde_json::to_string(&detail).unwrap();
+        assert!(!json.contains("password"));
+    }
+
+    #[test]
+    fn test_credential_detail_with_password() {
+        let detail = CredentialDetail {
+            id: "id".to_string(),
+            ssid: "SecureNet".to_string(),
+            security_type: "Wpa3Psk".to_string(),
+            password: Some("supersecret".to_string()),
+            hidden: false,
+            managed: false,
+            tags: vec![],
+        };
+
+        let json = serde_json::to_string(&detail).unwrap();
+        assert!(json.contains(r#""password":"supersecret""#));
+    }
+
+    // =========================================================================
+    // CollectionSummary Tests
+    // =========================================================================
+
+    #[test]
+    fn test_collection_summary_serialization() {
+        let summary = CollectionSummary {
+            id: "col-id".to_string(),
+            name: "My Networks".to_string(),
+            credential_count: 5,
+            is_shared: false,
+        };
+
+        let json = serde_json::to_string(&summary).unwrap();
+        let parsed: CollectionSummary = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(parsed.id, "col-id");
+        assert_eq!(parsed.name, "My Networks");
+        assert_eq!(parsed.credential_count, 5);
+        assert!(!parsed.is_shared);
+    }
+
+    #[test]
+    fn test_collection_summary_shared() {
+        let summary = CollectionSummary {
+            id: "shared-col".to_string(),
+            name: "Shared Collection".to_string(),
+            credential_count: 10,
+            is_shared: true,
+        };
+
+        let json = serde_json::to_string(&summary).unwrap();
+        assert!(json.contains(r#""is_shared":true"#));
+    }
+
+    // =========================================================================
+    // ImportSummary Tests
+    // =========================================================================
+
+    #[test]
+    fn test_import_summary_serialization() {
+        let summary = ImportSummary {
+            name: "Imported Collection".to_string(),
+            count: 15,
+        };
+
+        let json = serde_json::to_string(&summary).unwrap();
+        let parsed: ImportSummary = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(parsed.name, "Imported Collection");
+        assert_eq!(parsed.count, 15);
+    }
+
+    // =========================================================================
+    // ExportSummary Tests
+    // =========================================================================
+
+    #[test]
+    fn test_export_summary_unencrypted() {
+        let summary = ExportSummary {
+            name: "Backup".to_string(),
+            count: 8,
+            path: "/storage/emulated/0/Download/backup.json".to_string(),
+            encrypted: false,
+        };
+
+        let json = serde_json::to_string(&summary).unwrap();
+        assert!(json.contains(r#""encrypted":false"#));
+        assert!(json.contains(r#""path":"/storage/emulated/0/Download/backup.json""#));
+    }
+
+    #[test]
+    fn test_export_summary_encrypted() {
+        let summary = ExportSummary {
+            name: "Secure Backup".to_string(),
+            count: 12,
+            path: "/storage/emulated/0/Download/backup.json.enc".to_string(),
+            encrypted: true,
+        };
+
+        let json = serde_json::to_string(&summary).unwrap();
+        let parsed: ExportSummary = serde_json::from_str(&json).unwrap();
+
+        assert!(parsed.encrypted);
+        assert!(parsed.path.ends_with(".enc"));
+    }
+
+    // =========================================================================
+    // Round-trip Serialization Tests
+    // =========================================================================
+
+    #[test]
+    fn test_api_response_roundtrip() {
+        let original = ApiResponse::success(vec![
+            CredentialSummary {
+                id: "1".to_string(),
+                ssid: "Network1".to_string(),
+                security_type: "Wpa2Psk".to_string(),
+                hidden: false,
+                managed: true,
+                tags: vec!["home".to_string()],
+            },
+        ]);
+
+        let json = serde_json::to_string(&original).unwrap();
+        let parsed: ApiResponse<Vec<CredentialSummary>> = serde_json::from_str(&json).unwrap();
+
+        assert!(parsed.success);
+        assert!(parsed.data.is_some());
+        let data = parsed.data.unwrap();
+        assert_eq!(data.len(), 1);
+        assert_eq!(data[0].ssid, "Network1");
+    }
+
+    // =========================================================================
+    // Edge Case Tests
+    // =========================================================================
+
+    #[test]
+    fn test_empty_tags_serialization() {
+        let summary = CredentialSummary {
+            id: "id".to_string(),
+            ssid: "Net".to_string(),
+            security_type: "Wpa2Psk".to_string(),
+            hidden: false,
+            managed: false,
+            tags: vec![],
+        };
+
+        let json = serde_json::to_string(&summary).unwrap();
+        assert!(json.contains(r#""tags":[]"#));
+    }
+
+    #[test]
+    fn test_special_ssid_characters() {
+        let summary = CredentialSummary {
+            id: "id".to_string(),
+            ssid: "Net with spaces & \"quotes\"".to_string(),
+            security_type: "Wpa2Psk".to_string(),
+            hidden: false,
+            managed: false,
+            tags: vec![],
+        };
+
+        let json = serde_json::to_string(&summary).unwrap();
+        let parsed: CredentialSummary = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed.ssid, "Net with spaces & \"quotes\"");
+    }
+
+    #[test]
+    fn test_unicode_ssid() {
+        let summary = CredentialSummary {
+            id: "id".to_string(),
+            ssid: "カフェWiFi_咖啡".to_string(),
+            security_type: "Wpa2Psk".to_string(),
+            hidden: false,
+            managed: false,
+            tags: vec!["日本".to_string()],
+        };
+
+        let json = serde_json::to_string(&summary).unwrap();
+        let parsed: CredentialSummary = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed.ssid, "カフェWiFi_咖啡");
+        assert_eq!(parsed.tags[0], "日本");
     }
 }
