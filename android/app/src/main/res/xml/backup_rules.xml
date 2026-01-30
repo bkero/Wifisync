@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+   Backup rules for Android Auto Backup.
+   The credential database is excluded from backup for security.
+-->
+<full-backup-content>
+    <!-- Exclude the encrypted credential database -->
+    <exclude domain="file" path="wifisync.db.enc" />
+    <exclude domain="file" path="collections.json" />
+    <exclude domain="file" path="profiles.json" />
+</full-backup-content>

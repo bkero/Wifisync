@@ -73,6 +73,15 @@ impl Storage {
         Ok(Self { config })
     }
 
+    /// Create a new storage instance with a custom data directory
+    ///
+    /// This is useful for Android where the data directory is provided by the app context.
+    /// The config directory is set to the same as the data directory.
+    pub fn with_data_dir(data_dir: PathBuf) -> Result<Self> {
+        let config = StorageConfig::with_paths(data_dir.clone(), data_dir);
+        Self::with_config(config)
+    }
+
     /// Get the data directory path
     pub fn data_dir(&self) -> &Path {
         &self.config.data_dir
@@ -207,6 +216,17 @@ impl Storage {
         let collections = self.load_collections()?;
         for collection in &collections {
             if let Some(cred) = collection.find_by_id(credential_id) {
+                return Ok(Some(cred.clone()));
+            }
+        }
+        Ok(None)
+    }
+
+    /// Find a credential by SSID across all collections
+    pub fn find_credential_by_ssid(&self, ssid: &str) -> Result<Option<WifiCredential>> {
+        let collections = self.load_collections()?;
+        for collection in &collections {
+            if let Some(cred) = collection.find_by_ssid(ssid) {
                 return Ok(Some(cred.clone()));
             }
         }

@@ -3,9 +3,27 @@
 //! This module defines the `NetworkAdapter` trait that abstracts over different
 //! platform-specific network managers, and provides implementations for each
 //! supported platform.
+//!
+//! # Supported Platforms
+//!
+//! - **Linux**: NetworkManager via D-Bus (feature: `networkmanager`)
+//! - **Android**: WifiManager via JNI (feature: `android`)
+//!
+//! # Credential Delivery Patterns
+//!
+//! Different platforms use different credential delivery mechanisms:
+//!
+//! - **Linux (NetworkManager)**: Secret Agent pattern - profiles are created WITHOUT
+//!   passwords, and a daemon provides passwords on-demand via D-Bus GetSecrets()
+//!
+//! - **Android**: Direct embedding - passwords are embedded directly in
+//!   WifiNetworkSuggestion objects at creation time (platform constraint)
 
 #[cfg(feature = "networkmanager")]
 pub mod networkmanager;
+
+#[cfg(feature = "android")]
+pub mod android;
 
 use async_trait::async_trait;
 
@@ -106,6 +124,15 @@ impl NetworkAdapter for Box<dyn NetworkAdapter> {
 }
 
 /// Detect and create the appropriate adapter for the current platform
+///
+/// This function attempts to create an adapter in the following order:
+/// 1. On Linux: Try NetworkManager
+/// 2. On Android: The adapter must be created explicitly with `AndroidAdapter::new()`
+///    since it requires a JNI callback
+///
+/// # Errors
+///
+/// Returns `UnsupportedPlatform` if no suitable adapter is found.
 pub async fn detect_adapter() -> Result<Box<dyn NetworkAdapter>> {
     #[cfg(feature = "networkmanager")]
     {
@@ -120,7 +147,27 @@ pub async fn detect_adapter() -> Result<Box<dyn NetworkAdapter>> {
         }
     }
 
+    // Note: Android adapter cannot be auto-detected because it requires
+    // a JNI callback to be provided. Use AndroidAdapter::new() directly
+    // from the Android app with the appropriate callback.
+    #[cfg(feature = "android")]
+    {
+        if cfg!(target_os = "android") {
+            return Err(crate::Error::Internal {
+                message: "Android adapter requires JNI callback. \
+                          Use AndroidAdapter::new() with a callback implementation."
+                    .to_string(),
+            });
+        }
+    }
+
     Err(crate::Error::UnsupportedPlatform {
         platform: std::env::consts::OS.to_string(),
     })
 }
+
+// Re-export Android types when the feature is enabled
+#[cfg(feature = "android")]
+pub use android::{
+    AndroidAdapter, AndroidCapabilities, AndroidJniCallback, SuggestionInfo, SuggestionRequest,
+};

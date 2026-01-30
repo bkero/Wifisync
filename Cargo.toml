@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["crates/wifisync-core", "crates/wifisync-cli"]
+members = ["crates/wifisync-core", "crates/wifisync-cli", "crates/wifisync-jni"]
 
 [workspace.package]
 version = "0.1.0"
@@ -46,8 +46,11 @@ directories = "5.0"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
+# Logging
+log = "0.4"
+
 # Internal crates
-wifisync-core = { path = "crates/wifisync-core" }
+wifisync-core = { path = "crates/wifisync-core", default-features = true }
 
 [workspace.lints.rust]
 unsafe_code = "forbid"

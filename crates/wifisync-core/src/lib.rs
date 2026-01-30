@@ -27,3 +27,8 @@ pub use management::ProfileManager;
 pub use adapter::networkmanager::NetworkManagerAdapter;
 #[cfg(feature = "networkmanager")]
 pub use agent::{AgentService, AgentStatus};
+
+#[cfg(feature = "android")]
+pub use adapter::{
+    AndroidAdapter, AndroidCapabilities, AndroidJniCallback, SuggestionInfo, SuggestionRequest,
+};

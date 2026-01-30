@@ -42,6 +42,8 @@ glob = "0.3"
 [features]
 default = ["networkmanager"]
 networkmanager = ["dep:zbus"]
+# Android support - enables JNI bridge types and WifiConfigStore parsing
+android = []
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["test-util", "macros"] }

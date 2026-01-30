@@ -1,0 +1,54 @@
+[package]
+name = "wifisync-jni"
+description = "JNI bridge for Wifisync Android integration"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[lib]
+# Build as a C dynamic library for Android
+crate-type = ["cdylib"]
+
+[dependencies]
+# Core library with Android feature
+wifisync-core = { workspace = true, default-features = false, features = ["android"] }
+
+# JNI bindings
+jni = "0.21"
+
+# Async runtime - use current_thread for Android
+tokio = { workspace = true, features = ["rt", "sync"] }
+
+# Serialization for data exchange
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+# Error handling
+anyhow = { workspace = true }
+thiserror = { workspace = true }
+
+# Logging
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+android_logger = "0.14"
+log = "0.4"
+
+# Secret handling
+secrecy = { workspace = true }
+
+[target.'cfg(target_os = "android")'.dependencies]
+# Android-specific dependencies
+ndk-context = "0.1"
+
+# Override workspace lints - JNI requires unsafe code
+[lints.rust]
+# JNI requires unsafe trait impls and no_mangle functions
+unsafe_code = "allow"
+
+[lints.clippy]
+pedantic = { level = "warn", priority = -1 }
+module_name_repetitions = "allow"
+must_use_candidate = "allow"
+missing_errors_doc = "allow"
+missing_panics_doc = "allow"

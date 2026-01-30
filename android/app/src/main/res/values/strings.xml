@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Wifisync</string>
+    <string name="app_description">Sync and share WiFi credentials</string>
+
+    <!-- Navigation -->
+    <string name="nav_home">Home</string>
+    <string name="nav_collections">Collections</string>
+    <string name="nav_settings">Settings</string>
+
+    <!-- Actions -->
+    <string name="action_import">Import</string>
+    <string name="action_export">Export</string>
+    <string name="action_install">Install</string>
+    <string name="action_uninstall">Uninstall</string>
+    <string name="action_delete">Delete</string>
+
+    <!-- Permissions -->
+    <string name="permission_wifi_title">WiFi Permission</string>
+    <string name="permission_wifi_rationale">Wifisync needs WiFi access to manage network suggestions.</string>
+    <string name="permission_location_title">Location Permission</string>
+    <string name="permission_location_rationale">Location permission is required by Android to scan for WiFi networks. Your location is never stored or transmitted.</string>
+
+    <!-- Messages -->
+    <string name="msg_no_credentials">No credentials found. Import or add some!</string>
+    <string name="msg_suggestion_added">Network suggestion added successfully</string>
+    <string name="msg_suggestion_removed">Network suggestion removed</string>
+    <string name="msg_import_success">Imported %d credentials</string>
+    <string name="msg_export_success">Exported to %s</string>
+
+    <!-- Errors -->
+    <string name="error_permission_denied">Permission denied. Please enable in Settings.</string>
+    <string name="error_suggestion_failed">Failed to add network suggestion</string>
+    <string name="error_import_failed">Import failed: %s</string>
+    <string name="error_export_failed">Export failed: %s</string>
+</resources>
