@@ -1,0 +1,26 @@
+#!/bin/sh
+set -e
+
+case "$1" in
+    configure)
+        # Create wifisync-server user and group if they don't exist
+        if ! getent group wifisync-server > /dev/null 2>&1; then
+            addgroup --system wifisync-server
+        fi
+
+        if ! getent passwd wifisync-server > /dev/null 2>&1; then
+            adduser --system --ingroup wifisync-server --home /var/lib/wifisync-server \
+                --no-create-home --gecos "Wifisync Server" wifisync-server
+        fi
+
+        # Set ownership of data directory
+        if [ -d /var/lib/wifisync-server ]; then
+            chown wifisync-server:wifisync-server /var/lib/wifisync-server
+            chmod 750 /var/lib/wifisync-server
+        fi
+        ;;
+esac
+
+#DEBHELPER#
+
+exit 0

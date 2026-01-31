@@ -1,0 +1,33 @@
+[Unit]
+Description=Wifisync Sync Server
+Documentation=https://github.com/bkero/wifisync
+After=network.target
+
+[Service]
+Type=simple
+User=wifisync-server
+Group=wifisync-server
+ExecStart=/usr/bin/wifisync-server
+Restart=on-failure
+RestartSec=5
+
+# Environment
+Environment=DATABASE_URL=sqlite:/var/lib/wifisync-server/wifisync.db?mode=rwc
+Environment=BIND_ADDRESS=0.0.0.0:8080
+Environment=RUST_LOG=info
+
+# Security hardening
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+ReadWritePaths=/var/lib/wifisync-server
+
+# Resource limits
+LimitNOFILE=65535
+
+[Install]
+WantedBy=multi-user.target

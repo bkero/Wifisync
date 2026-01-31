@@ -1,0 +1,9 @@
+wifisync-server (0.1.0-1) unstable; urgency=medium
+
+  * Initial release
+  * REST API with JWT authentication
+  * SQLite database storage
+  * End-to-end encrypted credential sync
+  * Vector clock conflict detection
+
+ -- Wifisync Developers <dev@wifisync.example.com>  Fri, 31 Jan 2025 00:00:00 +0000

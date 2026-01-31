@@ -1,0 +1,29 @@
+Source: wifisync-server
+Section: net
+Priority: optional
+Maintainer: Wifisync Developers <dev@wifisync.example.com>
+Build-Depends: debhelper-compat (= 13),
+               pkg-config
+Standards-Version: 4.6.2
+Homepage: https://github.com/bkero/wifisync
+Vcs-Browser: https://github.com/bkero/wifisync
+Vcs-Git: https://github.com/bkero/wifisync.git
+Rules-Requires-Root: no
+
+Package: wifisync-server
+Architecture: any
+Depends: ${shlibs:Depends},
+         ${misc:Depends},
+         sqlite3,
+         adduser
+Description: Wifi credential sync server for Wifisync
+ Wifisync Server is the synchronization backend for Wifisync clients.
+ It provides a REST API for pushing and pulling encrypted wifi credentials
+ across multiple devices.
+ .
+ Features:
+  - REST API with JWT authentication
+  - SQLite database for easy self-hosting
+  - End-to-end encryption (server never sees plaintext passwords)
+  - Vector clock-based conflict detection
+  - Multi-device synchronization

@@ -7,8 +7,9 @@ set -euo pipefail
 
 PKG_NAME="wifisync"
 PKG_VERSION="${PKG_VERSION:-0.1.0}"
+DEBIAN_DIR="${DEBIAN_DIR:-deb}"
 
-echo "==> Building Wifisync DEB v${PKG_VERSION}"
+echo "==> Building Wifisync DEB v${PKG_VERSION} (debian: ${DEBIAN_DIR})"
 
 # Setup build directory
 echo "==> Setting up build directory..."
@@ -27,8 +28,14 @@ rsync -a \
     /build/ "$PKG_DIR/"
 
 # Copy debian directory
-cp -r /build/packaging/deb/debian "$PKG_DIR/"
+cp -r "/build/packaging/${DEBIAN_DIR}/debian" "$PKG_DIR/"
 chmod +x "$PKG_DIR/debian/rules"
+# Make maintainer scripts executable if they exist
+for script in postinst postrm preinst prerm; do
+    if [ -f "$PKG_DIR/debian/$script" ]; then
+        chmod +x "$PKG_DIR/debian/$script"
+    fi
+done
 
 # Create orig tarball
 echo "==> Creating orig tarball..."

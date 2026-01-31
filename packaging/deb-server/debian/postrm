@@ -1,0 +1,24 @@
+#!/bin/sh
+set -e
+
+case "$1" in
+    purge)
+        # Remove data directory on purge
+        if [ -d /var/lib/wifisync-server ]; then
+            rm -rf /var/lib/wifisync-server
+        fi
+
+        # Remove user and group
+        if getent passwd wifisync-server > /dev/null 2>&1; then
+            deluser --system wifisync-server || true
+        fi
+
+        if getent group wifisync-server > /dev/null 2>&1; then
+            delgroup --system wifisync-server || true
+        fi
+        ;;
+esac
+
+#DEBHELPER#
+
+exit 0

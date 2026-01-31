@@ -1,0 +1,31 @@
+#!/usr/bin/make -f
+
+export DEB_BUILD_MAINT_OPTIONS = hardening=+all
+export CARGO_HOME = $(CURDIR)/debian/.cargo
+
+%:
+	dh $@
+
+override_dh_auto_build:
+	cargo build --release --locked -p wifisync-server
+
+override_dh_auto_install:
+	# Install binary
+	install -Dm755 target/release/wifisync-server debian/wifisync-server/usr/bin/wifisync-server
+
+	# Install systemd system service
+	install -Dm644 packaging/systemd/wifisync-server.service \
+		debian/wifisync-server/lib/systemd/system/wifisync-server.service
+
+	# Create data directory
+	install -dm750 debian/wifisync-server/var/lib/wifisync-server
+
+override_dh_auto_test:
+	cargo test --release --locked -p wifisync-server
+
+override_dh_auto_clean:
+	cargo clean || true
+	rm -rf $(CARGO_HOME)
+
+override_dh_installsystemd:
+	dh_installsystemd --name=wifisync-server

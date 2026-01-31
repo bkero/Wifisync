@@ -7,8 +7,9 @@ set -euo pipefail
 
 PKG_NAME="wifisync"
 PKG_VERSION="${PKG_VERSION:-0.1.0}"
+SPEC_FILE="${SPEC_FILE:-wifisync.spec}"
 
-echo "==> Building Wifisync RPM v${PKG_VERSION}"
+echo "==> Building Wifisync RPM v${PKG_VERSION} (spec: ${SPEC_FILE})"
 
 # Create source tarball
 echo "==> Creating source tarball..."
@@ -26,12 +27,12 @@ tar --transform "s,^,${tarball_name}/," \
 
 # Copy spec file
 echo "==> Copying spec file..."
-cp /build/packaging/rpm/wifisync.spec /root/rpmbuild/SPECS/
+cp "/build/packaging/rpm/${SPEC_FILE}" /root/rpmbuild/SPECS/
 
 # Build RPM
 echo "==> Building RPM..."
 cd /root/rpmbuild/SPECS
-rpmbuild -ba wifisync.spec
+rpmbuild -ba "${SPEC_FILE}"
 
 # Copy output to mounted volume
 echo "==> Copying packages to output directory..."
