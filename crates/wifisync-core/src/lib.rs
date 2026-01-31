@@ -16,6 +16,8 @@ pub mod filter;
 pub mod management;
 pub mod models;
 pub mod storage;
+#[cfg(feature = "sync")]
+pub mod sync;
 
 pub use error::{Error, Result};
 pub use models::{
@@ -32,3 +34,6 @@ pub use agent::{AgentService, AgentStatus};
 pub use adapter::{
     AndroidAdapter, AndroidCapabilities, AndroidJniCallback, SuggestionInfo, SuggestionRequest,
 };
+
+#[cfg(feature = "sync")]
+pub use sync::{SyncClient, SyncConfig, SyncState};

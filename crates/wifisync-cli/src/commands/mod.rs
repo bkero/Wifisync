@@ -9,4 +9,5 @@ pub mod install;
 pub mod list;
 pub mod show;
 pub mod status;
+pub mod sync;
 pub mod uninstall;

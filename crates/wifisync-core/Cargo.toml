@@ -31,6 +31,12 @@ secrecy = { workspace = true }
 # D-Bus (Linux only)
 zbus = { workspace = true, optional = true }
 
+# Sync support (optional)
+reqwest = { workspace = true, optional = true }
+wifisync-sync-protocol = { workspace = true, optional = true }
+hkdf = { workspace = true, optional = true }
+sha2 = { workspace = true, optional = true }
+
 # Utilities
 uuid = { workspace = true }
 chrono = { workspace = true }
@@ -44,6 +50,8 @@ default = ["networkmanager"]
 networkmanager = ["dep:zbus"]
 # Android support - enables JNI bridge types and WifiConfigStore parsing
 android = []
+# Sync support - enables sync client functionality
+sync = ["dep:reqwest", "dep:wifisync-sync-protocol", "dep:hkdf", "dep:sha2"]
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["test-util", "macros"] }

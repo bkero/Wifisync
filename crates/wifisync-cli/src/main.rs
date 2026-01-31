@@ -112,6 +112,12 @@ enum Commands {
         #[command(subcommand)]
         action: AgentAction,
     },
+
+    /// Sync credentials with a remote server
+    Sync {
+        #[command(subcommand)]
+        action: SyncAction,
+    },
 }
 
 #[derive(Subcommand)]
@@ -172,6 +178,44 @@ enum AgentAction {
     Start,
     /// Show the daemon status
     Status,
+}
+
+#[derive(Subcommand)]
+enum SyncAction {
+    /// Login to a sync server
+    Login {
+        /// Server URL (e.g., https://sync.example.com)
+        server_url: String,
+        /// Username
+        username: String,
+    },
+    /// Logout from sync server
+    Logout,
+    /// Show sync status
+    Status,
+    /// Push local changes to server
+    Push,
+    /// Pull remote changes from server
+    Pull,
+    /// Bidirectional sync (push then pull)
+    #[command(name = "sync")]
+    SyncAll,
+    /// List pending conflicts
+    Conflicts,
+    /// Resolve a sync conflict
+    Resolve {
+        /// Conflict ID
+        id: String,
+        /// Keep the local version
+        #[arg(long, conflicts_with_all = ["keep_remote", "keep_both"])]
+        keep_local: bool,
+        /// Keep the remote version
+        #[arg(long, conflicts_with_all = ["keep_local", "keep_both"])]
+        keep_remote: bool,
+        /// Keep both versions (creates duplicate)
+        #[arg(long, conflicts_with_all = ["keep_local", "keep_remote"])]
+        keep_both: bool,
+    },
 }
 
 #[tokio::main]
@@ -236,6 +280,20 @@ async fn main() -> Result<()> {
         Commands::Agent { action } => match action {
             AgentAction::Start => commands::agent::start(cli.json).await,
             AgentAction::Status => commands::agent::status(cli.json).await,
+        },
+        Commands::Sync { action } => match action {
+            SyncAction::Login { server_url, username } => {
+                commands::sync::login(&server_url, &username, cli.json).await
+            }
+            SyncAction::Logout => commands::sync::logout(cli.json).await,
+            SyncAction::Status => commands::sync::status(cli.json).await,
+            SyncAction::Push => commands::sync::push(cli.json).await,
+            SyncAction::Pull => commands::sync::pull(cli.json).await,
+            SyncAction::SyncAll => commands::sync::sync_all(cli.json).await,
+            SyncAction::Conflicts => commands::sync::list_conflicts(cli.json).await,
+            SyncAction::Resolve { id, keep_local, keep_remote, keep_both } => {
+                commands::sync::resolve_conflict(&id, keep_local, keep_remote, keep_both, cli.json).await
+            }
         },
     };
 

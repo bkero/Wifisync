@@ -11,7 +11,7 @@ name = "wifisync"
 path = "src/main.rs"
 
 [dependencies]
-wifisync-core = { workspace = true }
+wifisync-core = { workspace = true, features = ["sync"] }
 
 # Async
 tokio = { workspace = true }
@@ -29,6 +29,20 @@ secrecy = { workspace = true }
 
 # Error handling
 anyhow = { workspace = true }
+
+# Password input
+rpassword = "7"
+
+# Directory handling
+directories = { workspace = true }
+
+# Hostname detection
+hostname = "0.4"
+
+# Utilities
+uuid = { workspace = true }
+chrono = { workspace = true }
+serde = { workspace = true }
 
 # Logging
 tracing = { workspace = true }
