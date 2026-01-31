@@ -1,0 +1,97 @@
+# Docker Compose file for wifisync-server (Production)
+#
+# This configuration includes:
+#   - Traefik reverse proxy with automatic HTTPS (Let's Encrypt)
+#   - Secure defaults
+#   - Resource limits
+#
+# Usage:
+#   1. Set required environment variables:
+#      export JWT_SECRET=$(openssl rand -base64 32)
+#      export DOMAIN=sync.example.com
+#      export ACME_EMAIL=admin@example.com
+#
+#   2. Start the stack:
+#      docker compose -f docker-compose.production.yml up -d
+#
+# The server will be available at https://${DOMAIN}
+#
+
+services:
+  wifisync-server:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: wifisync-server:latest
+    container_name: wifisync-server
+    restart: unless-stopped
+    networks:
+      - wifisync-internal
+    volumes:
+      - wifisync-data:/data
+    environment:
+      - DATABASE_URL=sqlite:/data/wifisync.db?mode=rwc
+      - BIND_ADDRESS=0.0.0.0:8080
+      - RUST_LOG=info
+      - JWT_SECRET=${JWT_SECRET:?JWT_SECRET is required}
+      - JWT_EXPIRATION_HOURS=168
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 256M
+        reservations:
+          cpus: '0.25'
+          memory: 64M
+    healthcheck:
+      test: ["CMD", "sqlite3", "/data/wifisync.db", "SELECT 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.wifisync.rule=Host(`${DOMAIN:?DOMAIN is required}`)"
+      - "traefik.http.routers.wifisync.entrypoints=websecure"
+      - "traefik.http.routers.wifisync.tls.certresolver=letsencrypt"
+      - "traefik.http.services.wifisync.loadbalancer.server.port=8080"
+
+  traefik:
+    image: traefik:v3.0
+    container_name: wifisync-traefik
+    restart: unless-stopped
+    networks:
+      - wifisync-internal
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - /var/run/docker.sock:ro
+      - traefik-certs:/certs
+    command:
+      - "--api.dashboard=false"
+      - "--providers.docker=true"
+      - "--providers.docker.exposedbydefault=false"
+      - "--providers.docker.network=wifisync-internal"
+      - "--entrypoints.web.address=:80"
+      - "--entrypoints.web.http.redirections.entrypoint.to=websecure"
+      - "--entrypoints.web.http.redirections.entrypoint.scheme=https"
+      - "--entrypoints.websecure.address=:443"
+      - "--certificatesresolvers.letsencrypt.acme.email=${ACME_EMAIL:?ACME_EMAIL is required}"
+      - "--certificatesresolvers.letsencrypt.acme.storage=/certs/acme.json"
+      - "--certificatesresolvers.letsencrypt.acme.httpchallenge.entrypoint=web"
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 128M
+
+networks:
+  wifisync-internal:
+    name: wifisync-internal
+
+volumes:
+  wifisync-data:
+    name: wifisync-data
+  traefik-certs:
+    name: traefik-certs

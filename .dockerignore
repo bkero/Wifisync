@@ -1,0 +1,39 @@
+# Build artifacts
+target/
+dist/
+
+# Git
+.git/
+.gitignore
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Documentation
+*.md
+!README.md
+
+# Test files
+*.db
+wifisync.db
+
+# Packaging (not needed for Docker build)
+packaging/
+
+# Android
+android/
+
+# OpenSpec
+openspec/
+
+# Claude
+.claude/
+CLAUDE.md
+
+# Misc
+.DS_Store
+Thumbs.db
