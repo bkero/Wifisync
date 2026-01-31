@@ -7,7 +7,7 @@
 # =============================================================================
 # Builder stage
 # =============================================================================
-FROM rust:1.75-bookworm AS builder
+FROM rust:1.85-bookworm AS builder
 
 WORKDIR /build
 
@@ -22,6 +22,7 @@ COPY Cargo.toml Cargo.lock ./
 COPY crates/wifisync-sync-protocol/Cargo.toml crates/wifisync-sync-protocol/
 COPY crates/wifisync-server/Cargo.toml crates/wifisync-server/
 COPY crates/wifisync-core/Cargo.toml crates/wifisync-core/
+COPY crates/wifisync-cli/Cargo.toml crates/wifisync-cli/
 COPY crates/wifisync-jni/Cargo.toml crates/wifisync-jni/
 
 # Create dummy source files for dependency caching
@@ -31,6 +32,8 @@ RUN mkdir -p crates/wifisync-sync-protocol/src \
     && echo "fn main() {}" > crates/wifisync-server/src/main.rs \
     && mkdir -p crates/wifisync-core/src \
     && echo "pub fn dummy() {}" > crates/wifisync-core/src/lib.rs \
+    && mkdir -p crates/wifisync-cli/src \
+    && echo "fn main() {}" > crates/wifisync-cli/src/main.rs \
     && mkdir -p crates/wifisync-jni/src \
     && echo "pub fn dummy() {}" > crates/wifisync-jni/src/lib.rs
 
