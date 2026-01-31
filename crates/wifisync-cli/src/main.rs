@@ -236,7 +236,7 @@ async fn main() -> Result<()> {
 
     // Run the command
     let result = match cli.command {
-        Commands::List { syncable } => commands::list::run(cli.json, syncable).await,
+        Commands::List { syncable } => commands::list::run(cli.json, syncable, cli.verbose).await,
         Commands::Show { ssid, show_password } => {
             commands::show::run(&ssid, show_password, cli.json).await
         }

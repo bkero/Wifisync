@@ -6,7 +6,7 @@ use wifisync_core::adapter::{detect_adapter, NetworkInfo};
 use wifisync_core::filter::FilterStats;
 use wifisync_core::SecurityType;
 
-pub async fn run(json: bool, syncable: bool) -> Result<()> {
+pub async fn run(json: bool, syncable: bool, verbose: bool) -> Result<()> {
     let adapter = detect_adapter().await?;
     let networks = adapter.list_networks().await?;
 
@@ -56,27 +56,64 @@ pub async fn run(json: bool, syncable: bool) -> Result<()> {
         if display_networks.is_empty() {
             println!("{}", style("No networks found.").dim());
         } else {
-            println!(
-                "{:<30} {:<15} {:<8} {}",
-                style("SSID").bold().underlined(),
-                style("Security").bold().underlined(),
-                style("Hidden").bold().underlined(),
-                style("Syncable").bold().underlined()
-            );
+            if verbose {
+                // Verbose output: include system ID
+                println!(
+                    "{:<30} {:<15} {:<8} {:<10} {}",
+                    style("SSID").bold().underlined(),
+                    style("Security").bold().underlined(),
+                    style("Hidden").bold().underlined(),
+                    style("Syncable").bold().underlined(),
+                    style("System ID").bold().underlined()
+                );
 
-            for network in &display_networks {
-                let security_str = format_security_type(network.security_type);
-                let hidden_str = if network.hidden { "yes" } else { "no" };
-                let syncable_str = if network.security_type.is_syncable() {
-                    style("✓").green().to_string()
-                } else {
-                    style("✗").red().to_string()
-                };
+                for network in &display_networks {
+                    let security_str = format_security_type(network.security_type);
+                    let hidden_str = if network.hidden { "yes" } else { "no" };
+                    let syncable_str = if network.security_type.is_syncable() {
+                        style("✓").green().to_string()
+                    } else {
+                        style("✗").red().to_string()
+                    };
 
+                    let system_id = network
+                        .system_id
+                        .as_deref()
+                        .unwrap_or("-");
+
+                    println!(
+                        "{:<30} {:<15} {:<8} {:<10} {}",
+                        network.ssid,
+                        security_str,
+                        hidden_str,
+                        syncable_str,
+                        style(system_id).dim()
+                    );
+                }
+            } else {
+                // Normal output
                 println!(
                     "{:<30} {:<15} {:<8} {}",
-                    network.ssid, security_str, hidden_str, syncable_str
+                    style("SSID").bold().underlined(),
+                    style("Security").bold().underlined(),
+                    style("Hidden").bold().underlined(),
+                    style("Syncable").bold().underlined()
                 );
+
+                for network in &display_networks {
+                    let security_str = format_security_type(network.security_type);
+                    let hidden_str = if network.hidden { "yes" } else { "no" };
+                    let syncable_str = if network.security_type.is_syncable() {
+                        style("✓").green().to_string()
+                    } else {
+                        style("✗").red().to_string()
+                    };
+
+                    println!(
+                        "{:<30} {:<15} {:<8} {}",
+                        network.ssid, security_str, hidden_str, syncable_str
+                    );
+                }
             }
         }
 
