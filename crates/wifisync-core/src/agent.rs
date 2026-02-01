@@ -77,7 +77,7 @@ impl WifisyncSecretAgent {
         String::from_utf8(ssid_bytes).ok()
     }
 
-    /// Look up a credential password by the connection's UUID
+    /// Look up a credential password by the connection's UUID or SSID
     fn lookup_password(&self, settings: &NMSettings) -> Option<String> {
         let system_id = Self::extract_uuid(settings)?;
         let ssid = Self::extract_ssid(settings).unwrap_or_else(|| "unknown".to_string());
@@ -88,44 +88,53 @@ impl WifisyncSecretAgent {
             "Looking up credential for Secret Agent request"
         );
 
-        // Look up profile by system_id
-        let profile = match self.storage.find_profile_by_system_id(&system_id) {
-            Ok(Some(p)) => p,
-            Ok(None) => {
-                tracing::debug!(
-                    system_id = %system_id,
-                    ssid = %ssid,
-                    "No profile found for this connection"
-                );
-                return None;
-            }
-            Err(e) => {
-                tracing::error!(error = %e, "Failed to look up profile");
-                return None;
-            }
-        };
-
-        // Find the credential in collections
-        match self.storage.find_credential(profile.credential_id) {
-            Ok(Some(cred)) => {
+        // First, try to look up by profile (system_id -> credential_id mapping)
+        if let Ok(Some(profile)) = self.storage.find_profile_by_system_id(&system_id) {
+            if let Ok(Some(cred)) = self.storage.find_credential(profile.credential_id) {
                 use secrecy::ExposeSecret;
                 tracing::info!(
                     ssid = %ssid,
                     system_id = %system_id,
-                    "Found credential, providing password to NetworkManager"
+                    "Found credential via profile mapping, providing password to NetworkManager"
                 );
-                Some(cred.password.expose_secret().to_string())
-            }
-            Ok(None) => {
+                return Some(cred.password.expose_secret().to_string());
+            } else {
                 tracing::warn!(
                     system_id = %system_id,
                     credential_id = %profile.credential_id,
                     "Profile found but credential not in any collection"
                 );
+            }
+        }
+
+        // Fallback: look up by SSID directly in collections
+        // This handles cases where:
+        // - The network was added to a collection but not "installed"
+        // - The NM connection was deleted and recreated with a new UUID
+        tracing::debug!(
+            ssid = %ssid,
+            "No profile mapping found, trying SSID lookup in collections"
+        );
+
+        match self.storage.find_credential_by_ssid(&ssid) {
+            Ok(Some(cred)) => {
+                use secrecy::ExposeSecret;
+                tracing::info!(
+                    ssid = %ssid,
+                    system_id = %system_id,
+                    "Found credential by SSID, providing password to NetworkManager"
+                );
+                Some(cred.password.expose_secret().to_string())
+            }
+            Ok(None) => {
+                tracing::debug!(
+                    ssid = %ssid,
+                    "No credential found for this SSID in any collection"
+                );
                 None
             }
             Err(e) => {
-                tracing::error!(error = %e, "Failed to look up credential");
+                tracing::error!(error = %e, "Failed to look up credential by SSID");
                 None
             }
         }
