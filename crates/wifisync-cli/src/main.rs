@@ -140,6 +140,11 @@ enum ExcludeAction {
 enum CollectionAction {
     /// List all collections
     List,
+    /// Show contents of a collection
+    Show {
+        /// Collection name
+        name: String,
+    },
     /// Create a new collection
     Create {
         /// Collection name
@@ -264,6 +269,9 @@ async fn main() -> Result<()> {
         },
         Commands::Collection { action } => match action {
             CollectionAction::List => commands::collection::list(cli.json).await,
+            CollectionAction::Show { name } => {
+                commands::collection::show(&name, cli.json).await
+            }
             CollectionAction::Create { name, description } => {
                 commands::collection::create(&name, description.as_deref(), cli.json).await
             }

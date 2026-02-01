@@ -66,6 +66,92 @@ pub async fn list(json: bool) -> Result<()> {
     Ok(())
 }
 
+pub async fn show(name: &str, json: bool) -> Result<()> {
+    let storage = Storage::new()?;
+    let collection = storage.load_collection(name)?;
+
+    if json {
+        let credentials: Vec<_> = collection
+            .credentials
+            .iter()
+            .map(|c| {
+                serde_json::json!({
+                    "id": c.id.to_string(),
+                    "ssid": c.ssid,
+                    "security_type": format!("{:?}", c.security_type),
+                    "hidden": c.hidden,
+                    "created_at": c.created_at.to_rfc3339(),
+                })
+            })
+            .collect();
+
+        let output = serde_json::json!({
+            "id": collection.id.to_string(),
+            "name": collection.name,
+            "description": collection.description,
+            "is_shared": collection.is_shared,
+            "created_at": collection.created_at.to_rfc3339(),
+            "updated_at": collection.updated_at.to_rfc3339(),
+            "credentials": credentials,
+        });
+        println!("{}", serde_json::to_string_pretty(&output)?);
+    } else {
+        println!(
+            "{} {}",
+            style("Collection:").bold(),
+            style(&collection.name).cyan()
+        );
+
+        if let Some(desc) = &collection.description {
+            println!("{} {}", style("Description:").bold(), desc);
+        }
+
+        println!(
+            "{} {}",
+            style("Created:").bold(),
+            collection.created_at.format("%Y-%m-%d %H:%M")
+        );
+
+        if collection.is_shared {
+            println!("{} yes", style("Shared:").bold());
+        }
+
+        println!();
+
+        if collection.credentials.is_empty() {
+            println!("{}", style("No networks in this collection.").dim());
+            println!();
+            println!(
+                "Use {} to add networks",
+                style(format!("wifisync collection add {} <ssid>", name)).cyan()
+            );
+        } else {
+            println!(
+                "{:<30} {:<15} {}",
+                style("SSID").bold().underlined(),
+                style("Security").bold().underlined(),
+                style("Added").bold().underlined()
+            );
+
+            for cred in &collection.credentials {
+                let security_str = format!("{:?}", cred.security_type);
+                let added = cred.created_at.format("%Y-%m-%d").to_string();
+
+                println!("{:<30} {:<15} {}", cred.ssid, security_str, added);
+            }
+
+            println!();
+            println!(
+                "{} {} networks",
+                style("Total:").bold(),
+                collection.credentials.len()
+            );
+        }
+    }
+
+    Ok(())
+}
+
 pub async fn create(name: &str, description: Option<&str>, json: bool) -> Result<()> {
     let storage = Storage::new()?;
 
