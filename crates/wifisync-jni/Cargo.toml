@@ -11,14 +11,29 @@ license.workspace = true
 crate-type = ["cdylib"]
 
 [dependencies]
-# Core library with Android feature
-wifisync-core = { workspace = true, default-features = false, features = ["android"] }
+# Core library with Android and sync features
+wifisync-core = { workspace = true, features = ["android", "sync"] }
+
+# Sync protocol for data types
+wifisync-sync-protocol = { workspace = true }
 
 # JNI bindings
 jni = "0.21"
 
 # Async runtime - use current_thread for Android
-tokio = { workspace = true, features = ["rt", "sync"] }
+tokio = { workspace = true, features = ["rt", "sync", "rt-multi-thread"] }
+
+# HTTP client for sync
+reqwest = { workspace = true }
+
+# Time handling
+chrono = { workspace = true }
+
+# UUID
+uuid = { workspace = true }
+
+# Hostname for device name
+hostname = "0.4"
 
 # Serialization for data exchange
 serde = { workspace = true }

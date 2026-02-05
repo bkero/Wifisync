@@ -523,4 +523,106 @@ mod tests {
         let exclusions = storage.load_exclusions().unwrap();
         assert!(exclusions.is_empty());
     }
+
+    /// Test SSID lookup across collections
+    ///
+    /// This tests the fallback mechanism used by the Secret Agent when a
+    /// NetworkManager connection is deleted and recreated with a new UUID.
+    /// The agent should be able to find credentials by SSID even when the
+    /// UUID-based profile lookup fails.
+    #[test]
+    fn test_find_credential_by_ssid() {
+        use crate::models::{SecurityType, SourcePlatform};
+
+        let (storage, _tmp) = test_storage();
+
+        // Create a collection with multiple credentials
+        let mut collection = CredentialCollection::new("WiFi Networks");
+
+        let cred1 = WifiCredential::new(
+            "CoffeeShop",
+            "coffee123",
+            SecurityType::Wpa2Psk,
+            SourcePlatform::NetworkManager,
+        );
+        let cred2 = WifiCredential::new(
+            "HomeNetwork",
+            "home456",
+            SecurityType::Wpa3Psk,
+            SourcePlatform::NetworkManager,
+        );
+        let cred3 = WifiCredential::new(
+            "OfficeWifi",
+            "work789",
+            SecurityType::Wpa2Psk,
+            SourcePlatform::Manual,
+        );
+
+        collection.add(cred1);
+        collection.add(cred2);
+        collection.add(cred3);
+        storage.save_collection(&collection).unwrap();
+
+        // Find by exact SSID match
+        let found = storage.find_credential_by_ssid("HomeNetwork").unwrap();
+        assert!(found.is_some());
+        let cred = found.unwrap();
+        assert_eq!(cred.ssid, "HomeNetwork");
+        use secrecy::ExposeSecret;
+        assert_eq!(cred.password.expose_secret(), "home456");
+
+        // Find another credential
+        let found = storage.find_credential_by_ssid("CoffeeShop").unwrap();
+        assert!(found.is_some());
+        assert_eq!(found.unwrap().ssid, "CoffeeShop");
+
+        // Not found - nonexistent SSID
+        let not_found = storage.find_credential_by_ssid("NonexistentNetwork").unwrap();
+        assert!(not_found.is_none());
+
+        // Not found - case sensitive
+        let not_found = storage.find_credential_by_ssid("homenetwork").unwrap();
+        assert!(not_found.is_none());
+    }
+
+    /// Test SSID lookup across multiple collections
+    ///
+    /// Verifies that find_credential_by_ssid searches all collections,
+    /// not just the first one.
+    #[test]
+    fn test_find_credential_by_ssid_multiple_collections() {
+        use crate::models::{SecurityType, SourcePlatform};
+
+        let (storage, _tmp) = test_storage();
+
+        // Create first collection
+        let mut col1 = CredentialCollection::new("Personal");
+        col1.add(WifiCredential::new(
+            "HomeWifi",
+            "pass1",
+            SecurityType::Wpa2Psk,
+            SourcePlatform::Manual,
+        ));
+        storage.save_collection(&col1).unwrap();
+
+        // Create second collection
+        let mut col2 = CredentialCollection::new("Work");
+        col2.add(WifiCredential::new(
+            "OfficeWifi",
+            "pass2",
+            SecurityType::Wpa2Psk,
+            SourcePlatform::Manual,
+        ));
+        storage.save_collection(&col2).unwrap();
+
+        // Should find credential in first collection
+        let found = storage.find_credential_by_ssid("HomeWifi").unwrap();
+        assert!(found.is_some());
+        assert_eq!(found.unwrap().ssid, "HomeWifi");
+
+        // Should find credential in second collection
+        let found = storage.find_credential_by_ssid("OfficeWifi").unwrap();
+        assert!(found.is_some());
+        assert_eq!(found.unwrap().ssid, "OfficeWifi");
+    }
 }

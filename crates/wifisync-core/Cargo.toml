@@ -54,8 +54,20 @@ android = []
 sync = ["dep:reqwest", "dep:wifisync-sync-protocol", "dep:hkdf", "dep:sha2"]
 
 [dev-dependencies]
-tokio = { workspace = true, features = ["test-util", "macros"] }
+tokio = { workspace = true, features = ["test-util", "macros", "rt-multi-thread"] }
 tempfile = "3.10"
+# For sync integration tests
+axum = "0.7"
+sqlx = { version = "0.8", features = ["sqlite", "runtime-tokio"] }
+bcrypt = "0.15"
+jsonwebtoken = "9"
+tower = "0.5"
+reqwest = { workspace = true }
+wifisync-sync-protocol = { workspace = true }
+
+[[test]]
+name = "sync_client_integration"
+required-features = ["sync"]
 
 [lints]
 workspace = true

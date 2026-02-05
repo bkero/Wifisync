@@ -29,6 +29,7 @@ pub enum ServerError {
 
     /// Conflict detected
     #[error("Conflict: {message}")]
+    #[allow(dead_code)]
     Conflict { message: String },
 
     /// Validation error
@@ -61,6 +62,7 @@ impl ServerError {
     }
 
     /// Create a conflict error
+    #[allow(dead_code)]
     pub fn conflict(message: impl Into<String>) -> Self {
         Self::Conflict {
             message: message.into(),
@@ -68,6 +70,7 @@ impl ServerError {
     }
 
     /// Create a validation error
+    #[allow(dead_code)]
     pub fn validation(message: impl Into<String>) -> Self {
         Self::Validation {
             message: message.into(),

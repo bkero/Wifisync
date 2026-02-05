@@ -54,6 +54,7 @@ impl ConflictDetector {
     }
 
     /// Check if two changes are in conflict
+    #[allow(dead_code)]
     pub fn are_concurrent(clock1: &VectorClock, clock2: &VectorClock) -> bool {
         clock1.is_concurrent_with(clock2)
     }

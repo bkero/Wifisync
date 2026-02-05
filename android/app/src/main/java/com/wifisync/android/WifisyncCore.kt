@@ -42,6 +42,28 @@ object WifisyncCore {
     @JvmStatic
     private external fun nativeListCollections(): String
 
+    // Sync-related native methods
+    @JvmStatic
+    private external fun nativeSyncLogin(serverUrl: String, username: String, password: String): String
+
+    @JvmStatic
+    private external fun nativeSyncLogout(): String
+
+    @JvmStatic
+    private external fun nativeSyncStatus(): String
+
+    @JvmStatic
+    private external fun nativeSyncPush(password: String): String
+
+    @JvmStatic
+    private external fun nativeSyncPull(password: String): String
+
+    @JvmStatic
+    private external fun nativeListDevices(): String
+
+    @JvmStatic
+    private external fun nativeGetVersion(): String
+
     // ========================================================================
     // Public Kotlin API
     // ========================================================================
@@ -129,6 +151,84 @@ object WifisyncCore {
     }
 
     // ========================================================================
+    // Sync API
+    // ========================================================================
+
+    /**
+     * Login to a sync server.
+     *
+     * @param serverUrl The server URL (e.g., "https://sync.example.com")
+     * @param username The username
+     * @param password The master password
+     * @return Result containing login response or an error.
+     */
+    fun syncLogin(serverUrl: String, username: String, password: String): Result<SyncLoginResponse> {
+        return parseResponse(nativeSyncLogin(serverUrl, username, password))
+    }
+
+    /**
+     * Logout from the sync server.
+     *
+     * @return Result indicating success or an error.
+     */
+    fun syncLogout(): Result<Unit> {
+        val response = nativeSyncLogout()
+        val apiResponse: ApiResponse<Any> = gson.fromJson(response, object : TypeToken<ApiResponse<Any>>() {}.type)
+        return if (apiResponse.success) {
+            Result.success(Unit)
+        } else {
+            Result.failure(WifisyncException(apiResponse.error ?: "Unknown error"))
+        }
+    }
+
+    /**
+     * Get the current sync status.
+     *
+     * @return Result containing sync status or an error.
+     */
+    fun syncStatus(): Result<SyncStatus> {
+        return parseResponse(nativeSyncStatus())
+    }
+
+    /**
+     * Push local changes to the server.
+     *
+     * @param password The master password for encryption.
+     * @return Result containing push summary or an error.
+     */
+    fun syncPush(password: String): Result<SyncPushResponse> {
+        return parseResponse(nativeSyncPush(password))
+    }
+
+    /**
+     * Pull remote changes from the server.
+     *
+     * @param password The master password for decryption.
+     * @return Result containing pull summary or an error.
+     */
+    fun syncPull(password: String): Result<SyncPullResponse> {
+        return parseResponse(nativeSyncPull(password))
+    }
+
+    /**
+     * List devices logged in to the current account.
+     *
+     * @return Result containing list of devices or an error.
+     */
+    fun listDevices(): Result<List<DeviceInfo>> {
+        return parseResponse(nativeListDevices())
+    }
+
+    /**
+     * Get the app version.
+     *
+     * @return Result containing version info or an error.
+     */
+    fun getVersion(): Result<VersionInfo> {
+        return parseResponse(nativeGetVersion())
+    }
+
+    // ========================================================================
     // Private helpers
     // ========================================================================
 
@@ -213,6 +313,68 @@ data class ExportSummary(
     val count: Int,
     val path: String,
     val encrypted: Boolean
+)
+
+// ============================================================================
+// Sync-related data classes
+// ============================================================================
+
+/**
+ * Sync login response.
+ */
+data class SyncLoginResponse(
+    val serverUrl: String,
+    val username: String,
+    val deviceId: String
+)
+
+/**
+ * Current sync status.
+ */
+data class SyncStatus(
+    val enabled: Boolean,
+    val serverUrl: String? = null,
+    val username: String? = null,
+    val deviceId: String? = null,
+    val lastSync: String? = null,
+    val pendingChanges: Int = 0,
+    val hasValidToken: Boolean = false
+)
+
+/**
+ * Sync push response.
+ */
+data class SyncPushResponse(
+    val accepted: Int,
+    val conflicts: Int
+)
+
+/**
+ * Sync pull response.
+ */
+data class SyncPullResponse(
+    val applied: Int,
+    val errors: Int
+)
+
+/**
+ * Device information.
+ */
+data class DeviceInfo(
+    val id: String,
+    val name: String,
+    val lastSyncAt: String? = null,
+    val createdAt: String,
+    val isCurrentDevice: Boolean = false
+)
+
+/**
+ * Version information.
+ */
+data class VersionInfo(
+    val version: String,
+    val rustVersion: String? = null,
+    val buildDate: String? = null
 )
 
 /**

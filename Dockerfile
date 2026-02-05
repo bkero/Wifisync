@@ -32,6 +32,8 @@ RUN mkdir -p crates/wifisync-sync-protocol/src \
     && echo "fn main() {}" > crates/wifisync-server/src/main.rs \
     && mkdir -p crates/wifisync-core/src \
     && echo "pub fn dummy() {}" > crates/wifisync-core/src/lib.rs \
+    && mkdir -p crates/wifisync-core/tests \
+    && echo "fn main() {}" > crates/wifisync-core/tests/sync_client_integration.rs \
     && mkdir -p crates/wifisync-cli/src \
     && echo "fn main() {}" > crates/wifisync-cli/src/main.rs \
     && mkdir -p crates/wifisync-jni/src \

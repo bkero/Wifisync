@@ -76,7 +76,7 @@ hkdf = "0.12"
 sha2 = "0.10"
 
 # Internal crates
-wifisync-core = { path = "crates/wifisync-core", default-features = true }
+wifisync-core = { path = "crates/wifisync-core" }
 wifisync-sync-protocol = { path = "crates/wifisync-sync-protocol" }
 
 [workspace.lints.rust]

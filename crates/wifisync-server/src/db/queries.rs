@@ -23,6 +23,7 @@ pub async fn find_user_by_username(
 }
 
 /// Find a user by ID
+#[allow(dead_code)]
 pub async fn find_user_by_id(pool: &SqlitePool, user_id: &str) -> ServerResult<Option<DbUser>> {
     let user = sqlx::query_as::<_, DbUser>("SELECT * FROM users WHERE id = ?")
         .bind(user_id)
@@ -60,6 +61,7 @@ pub async fn find_device_by_id(
 }
 
 /// Find devices for a user
+#[allow(dead_code)]
 pub async fn find_devices_by_user(
     pool: &SqlitePool,
     user_id: &str,
@@ -196,6 +198,7 @@ pub async fn find_sync_record(
 }
 
 /// Find sync records for a collection
+#[allow(dead_code)]
 pub async fn find_sync_records_by_collection(
     pool: &SqlitePool,
     collection_id: &str,

@@ -325,4 +325,83 @@ mod tests {
 
         assert_eq!(loaded_state.pending_count(), 1);
     }
+
+    /// Test first sync detection
+    ///
+    /// When a user first logs in to sync, they may have existing local
+    /// credentials that need to be pushed. The first sync is detected when:
+    /// - last_sync is None (never synced)
+    /// - pending_changes is empty (no changes recorded yet)
+    ///
+    /// In this case, all existing local credentials should be pushed.
+    #[test]
+    fn test_first_sync_detection() {
+        // New state with no history = first sync
+        let state = SyncState::new();
+        assert!(state.last_sync.is_none());
+        assert!(!state.has_pending_changes());
+
+        // This combination indicates first sync
+        let is_first_sync = state.last_sync.is_none() && !state.has_pending_changes();
+        assert!(is_first_sync);
+    }
+
+    /// Test that after syncing, it's no longer considered first sync
+    #[test]
+    fn test_after_first_sync() {
+        let mut state = SyncState::new();
+
+        // Mark as synced
+        state.mark_synced(VectorClock::new());
+
+        // Now last_sync is set, so not a first sync
+        assert!(state.last_sync.is_some());
+        let is_first_sync = state.last_sync.is_none() && !state.has_pending_changes();
+        assert!(!is_first_sync);
+    }
+
+    /// Test pending changes after first sync
+    ///
+    /// After the first sync, new changes should be tracked normally.
+    #[test]
+    fn test_pending_changes_after_first_sync() {
+        let mut state = SyncState::new();
+
+        // First sync
+        state.mark_synced(VectorClock::new());
+        assert!(!state.has_pending_changes());
+
+        // Make a change
+        let coll_id = uuid::Uuid::new_v4();
+        let cred_id = uuid::Uuid::new_v4();
+        state.record_change(coll_id, cred_id, ChangeType::Create, "device1");
+
+        // Now has pending changes, but not first sync
+        assert!(state.has_pending_changes());
+        assert_eq!(state.pending_count(), 1);
+        let is_first_sync = state.last_sync.is_none() && !state.has_pending_changes();
+        assert!(!is_first_sync);
+    }
+
+    /// Test state without sync_state.json file
+    ///
+    /// When there's no sync_state.json file, load_state() should return
+    /// a new empty state (first sync scenario).
+    #[test]
+    fn test_missing_state_file_is_first_sync() {
+        let dir = tempdir().unwrap();
+        let manager = SyncStateManager::new(dir.path());
+
+        // No state file exists
+        assert!(!dir.path().join("sync_state.json").exists());
+
+        // Loading state returns new empty state
+        let state = manager.load_state().unwrap();
+        assert!(state.last_sync.is_none());
+        assert!(!state.has_pending_changes());
+
+        // This is a first sync scenario
+        let is_first_sync = state.last_sync.is_none() && !state.has_pending_changes();
+        assert!(is_first_sync);
+    }
 }

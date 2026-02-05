@@ -34,6 +34,7 @@ impl DbUser {
     }
 
     /// Get creation time as DateTime
+    #[allow(dead_code)]
     pub fn created_at_dt(&self) -> DateTime<Utc> {
         DateTime::parse_from_rfc3339(&self.created_at)
             .expect("Invalid datetime in database")
