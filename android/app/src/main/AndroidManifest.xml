@@ -13,6 +13,9 @@
     <!-- Network state -->
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
 
+    <!-- Internet access for sync -->
+    <uses-permission android:name="android.permission.INTERNET" />
+
     <!-- Feature declaration -->
     <uses-feature
         android:name="android.hardware.wifi"
@@ -28,6 +31,7 @@
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
         android:theme="@style/Theme.Wifisync"
+        android:usesCleartextTraffic="true"
         tools:targetApi="34">
 
         <activity
