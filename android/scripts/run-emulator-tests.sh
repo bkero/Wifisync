@@ -9,6 +9,14 @@
 #   --reuse-emulator   Skip AVD creation and emulator boot if already running
 #   --help             Show this help message
 #
+# Environment variables for live sync tests (optional):
+#   WIFISYNC_SERVER_URL  Sync server URL (e.g., https://sync.example.com)
+#   WIFISYNC_USERNAME    Sync server username
+#   WIFISYNC_PASSWORD    Sync server master password
+#
+# When these variables are set, LiveSyncApiTest and LiveSyncUiTest will run
+# against the specified server. When not set, those tests are skipped (ignored).
+#
 
 set -euo pipefail
 

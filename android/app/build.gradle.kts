@@ -16,6 +16,10 @@ android {
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
+        testInstrumentationRunnerArguments["syncServerUrl"] = System.getenv("WIFISYNC_SERVER_URL") ?: ""
+        testInstrumentationRunnerArguments["syncUsername"] = System.getenv("WIFISYNC_USERNAME") ?: ""
+        testInstrumentationRunnerArguments["syncPassword"] = System.getenv("WIFISYNC_PASSWORD") ?: ""
+
         // Build for all supported architectures
         ndk {
             abiFilters += listOf("arm64-v8a", "armeabi-v7a", "x86_64")
