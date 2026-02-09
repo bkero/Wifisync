@@ -112,11 +112,17 @@ impl SyncClient {
 
     /// Get the auth salt for a user (returns None if user doesn't exist)
     pub async fn get_salt(&self, username: &str) -> Result<Option<String>> {
-        let url = self.url(&format!("/api/v1/auth/salt/{}", username));
+        // Build URL with proper percent-encoding of the username path segment
+        let base = self.url("/api/v1/auth/salt");
+        let mut url = reqwest::Url::parse(&base)
+            .map_err(|e| Error::internal(format!("Invalid URL: {e}")))?;
+        url.path_segments_mut()
+            .map_err(|_| Error::internal("URL cannot-be-a-base"))?
+            .push(username);
 
         let response = self
             .client
-            .get(&url)
+            .get(url)
             .send()
             .await
             .map_err(|e| Error::internal(format!("Request failed: {e}")))?;

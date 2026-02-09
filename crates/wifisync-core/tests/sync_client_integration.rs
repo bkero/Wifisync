@@ -1066,3 +1066,32 @@ async fn test_sync_client_get_salt_nonexistent() {
     let result = client.get_salt("nonexistent_user").await.unwrap();
     assert!(result.is_none());
 }
+
+/// Test get_salt works with usernames containing URL-special characters
+/// (spaces, @, #, etc.) — these must be percent-encoded in the URL path
+#[tokio::test]
+async fn test_sync_client_get_salt_special_chars_username() {
+    let server = TestServer::start().await;
+    let mut client = SyncClient::new(&server.base_url()).unwrap();
+
+    let special_username = "user @name#test";
+    let auth_proof = "some_proof";
+    let auth_salt = "c29tZV9zYWx0";
+
+    // Register user with special characters in username
+    client
+        .register(special_username, auth_proof, auth_salt)
+        .await
+        .unwrap();
+
+    // get_salt must not fail with "builder error" — the username must be percent-encoded
+    let result = client.get_salt(special_username).await.unwrap();
+    assert_eq!(result.unwrap(), auth_salt);
+
+    // Login should also succeed
+    let login = client
+        .login(special_username, auth_proof, "Test Device")
+        .await
+        .unwrap();
+    assert!(!login.device_id.is_empty());
+}
