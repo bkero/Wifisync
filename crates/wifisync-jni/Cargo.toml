@@ -52,6 +52,9 @@ log = "0.4"
 # Secret handling
 secrecy = { workspace = true }
 
+# Base64 encoding for salt
+base64 = "0.21"
+
 [target.'cfg(target_os = "android")'.dependencies]
 # Android-specific dependencies
 ndk-context = "0.1"

@@ -20,6 +20,16 @@ pub struct RegisterRequest {
     /// Authentication proof (derived from master password via HKDF)
     /// Server stores hash of this, never the master password
     pub auth_proof: String,
+    /// Base64-encoded salt used for key derivation
+    /// Stored on server so the same auth_proof can be derived on re-login
+    pub auth_salt: String,
+}
+
+/// Response containing the salt for a user
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SaltResponse {
+    /// Base64-encoded salt used for key derivation
+    pub auth_salt: String,
 }
 
 /// Response to user registration

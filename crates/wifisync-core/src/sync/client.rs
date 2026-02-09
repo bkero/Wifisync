@@ -6,7 +6,7 @@ use wifisync_sync_protocol::{
     ApiError, CollectionsResponse, ConflictResolution, ConflictsResponse,
     CreateCollectionRequest, CreateCollectionResponse, LoginRequest, LoginResponse, PullRequest,
     PullResponse, PushRequest, PushResponse, RegisterRequest, RegisterResponse,
-    ResolveConflictRequest, VectorClock,
+    ResolveConflictRequest, SaltResponse, VectorClock,
 };
 
 use crate::error::{Error, Result};
@@ -84,11 +84,12 @@ impl SyncClient {
     // =========================================================================
 
     /// Register a new user
-    pub async fn register(&self, username: &str, auth_proof: &str) -> Result<RegisterResponse> {
+    pub async fn register(&self, username: &str, auth_proof: &str, auth_salt: &str) -> Result<RegisterResponse> {
         let url = self.url("/api/v1/users/register");
         let req = RegisterRequest {
             username: username.to_string(),
             auth_proof: auth_proof.to_string(),
+            auth_salt: auth_salt.to_string(),
         };
 
         let response = self
@@ -104,6 +105,30 @@ impl SyncClient {
                 .json()
                 .await
                 .map_err(|e| Error::internal(format!("Failed to parse response: {e}")))
+        } else {
+            Err(Self::handle_error(response).await)
+        }
+    }
+
+    /// Get the auth salt for a user (returns None if user doesn't exist)
+    pub async fn get_salt(&self, username: &str) -> Result<Option<String>> {
+        let url = self.url(&format!("/api/v1/auth/salt/{}", username));
+
+        let response = self
+            .client
+            .get(&url)
+            .send()
+            .await
+            .map_err(|e| Error::internal(format!("Request failed: {e}")))?;
+
+        if response.status().is_success() {
+            let salt_resp: SaltResponse = response
+                .json()
+                .await
+                .map_err(|e| Error::internal(format!("Failed to parse response: {e}")))?;
+            Ok(Some(salt_resp.auth_salt))
+        } else if response.status() == reqwest::StatusCode::NOT_FOUND {
+            Ok(None)
         } else {
             Err(Self::handle_error(response).await)
         }

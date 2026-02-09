@@ -1,10 +1,14 @@
 //! Authentication handlers
 
-use axum::{extract::State, http::StatusCode, Json};
+use axum::{
+    extract::{Path, State},
+    http::StatusCode,
+    Json,
+};
 use chrono::{Duration, Utc};
 use wifisync_sync_protocol::{
     LoginRequest, LoginResponse, RefreshRequest, RefreshResponse, RegisterRequest,
-    RegisterResponse,
+    RegisterResponse, SaltResponse,
 };
 
 use crate::{
@@ -35,7 +39,7 @@ pub async fn register(
     let auth_key_hash = bcrypt::hash(&req.auth_proof, bcrypt::DEFAULT_COST)?;
 
     // Create user
-    let user = DbUser::new(req.username, auth_key_hash);
+    let user = DbUser::new(req.username, auth_key_hash, req.auth_salt);
     queries::create_user(&state.db, &user).await?;
 
     tracing::info!("User registered: {}", user.id);
@@ -111,6 +115,20 @@ pub async fn refresh(
     let expires_at = Utc::now() + Duration::hours(state.config.jwt_expiration_hours as i64);
 
     Ok(Json(RefreshResponse { token, expires_at }))
+}
+
+/// Get the auth salt for a user (used during re-login)
+pub async fn get_salt(
+    State(state): State<AppState>,
+    Path(username): Path<String>,
+) -> ServerResult<Json<SaltResponse>> {
+    tracing::info!("Salt request for user: {}", username);
+
+    let salt = queries::find_salt_by_username(&state.db, &username)
+        .await?
+        .ok_or(ServerError::not_found("User"))?;
+
+    Ok(Json(SaltResponse { auth_salt: salt }))
 }
 
 /// Logout (delete device)

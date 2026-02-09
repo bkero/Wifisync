@@ -3321,6 +3321,7 @@ name = "wifisync"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "base64 0.21.7",
  "chrono",
  "clap",
  "console",
@@ -3378,6 +3379,7 @@ version = "0.1.0"
 dependencies = [
  "android_logger",
  "anyhow",
+ "base64 0.21.7",
  "chrono",
  "hostname",
  "jni",

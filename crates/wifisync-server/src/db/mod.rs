@@ -31,6 +31,7 @@ async fn run_migrations(pool: &SqlitePool) -> anyhow::Result<()> {
             id TEXT PRIMARY KEY,
             username TEXT UNIQUE NOT NULL,
             auth_key_hash TEXT NOT NULL,
+            auth_salt TEXT NOT NULL DEFAULT '',
             created_at TEXT NOT NULL
         )
         ",
@@ -121,6 +122,21 @@ async fn run_migrations(pool: &SqlitePool) -> anyhow::Result<()> {
     sqlx::query("CREATE INDEX IF NOT EXISTS idx_conflicts_user_id ON conflicts(user_id)")
         .execute(pool)
         .await?;
+
+    // Migration: add auth_salt column to existing users table
+    let has_auth_salt: bool = sqlx::query_scalar::<_, i32>(
+        "SELECT COUNT(*) FROM pragma_table_info('users') WHERE name='auth_salt'",
+    )
+    .fetch_one(pool)
+    .await
+    .map(|count| count > 0)?;
+
+    if !has_auth_salt {
+        sqlx::query("ALTER TABLE users ADD COLUMN auth_salt TEXT NOT NULL DEFAULT ''")
+            .execute(pool)
+            .await?;
+        tracing::info!("Added auth_salt column to users table");
+    }
 
     tracing::info!("Database migrations complete");
     Ok(())

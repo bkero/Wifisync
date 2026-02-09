@@ -492,16 +492,6 @@ fn sync_login_impl(server_url: &str, username: &str, password: &str) -> String {
         return json_error("Password cannot be empty");
     }
 
-    // Generate salt for key derivation
-    let salt = generate_salt();
-
-    // Derive keys
-    let encryption = match SyncEncryption::from_password(password, &salt) {
-        Ok(e) => e,
-        Err(e) => return json_error(&format!("Key derivation failed: {e}")),
-    };
-    let auth_proof = encryption.auth_proof();
-
     // Get device name
     let device_name = hostname::get()
         .map(|h| h.to_string_lossy().to_string())
@@ -510,28 +500,55 @@ fn sync_login_impl(server_url: &str, username: &str, password: &str) -> String {
     // Run async login in tokio runtime
     let runtime = get_runtime();
     let result = runtime.block_on(async {
-        // Create client and try to login
+        // Create client
         let mut client = match SyncClient::new(server_url) {
             Ok(c) => c,
-            Err(e) => return Err(format!("Failed to create client: {e}")),
+            Err(e) => return Err((format!("Failed to create client: {e}"), None::<[u8; 32]>)),
         };
 
-        // First, try to register (in case user doesn't exist)
-        if let Err(e) = client.register(username, &auth_proof).await {
-            if !e.to_string().contains("already exists") {
-                tracing::debug!("Registration failed (may be expected): {}", e);
+        // Try to get existing salt from server
+        let (salt, is_new_user) = match client.get_salt(username).await {
+            Ok(Some(salt_b64)) => {
+                use base64::Engine;
+                let salt_bytes = base64::engine::general_purpose::STANDARD
+                    .decode(&salt_b64)
+                    .map_err(|e| (format!("Invalid salt from server: {e}"), None))?;
+                let salt: [u8; 32] = salt_bytes
+                    .try_into()
+                    .map_err(|_| ("Salt has wrong length".to_string(), None))?;
+                (salt, false)
+            }
+            Ok(None) => (generate_salt(), true),
+            Err(e) => return Err((format!("Failed to get salt: {e}"), None)),
+        };
+
+        // Derive keys
+        let encryption = match SyncEncryption::from_password(password, &salt) {
+            Ok(e) => e,
+            Err(e) => return Err((format!("Key derivation failed: {e}"), None)),
+        };
+        let auth_proof = encryption.auth_proof();
+
+        // Register if new user
+        if is_new_user {
+            use base64::Engine;
+            let salt_b64 = base64::engine::general_purpose::STANDARD.encode(salt);
+            if let Err(e) = client.register(username, &auth_proof, &salt_b64).await {
+                if !e.to_string().contains("already exists") {
+                    tracing::debug!("Registration failed (may be expected): {}", e);
+                }
             }
         }
 
         // Now login
         match client.login(username, &auth_proof, &device_name).await {
-            Ok(resp) => Ok(resp),
-            Err(e) => Err(format!("Login failed: {e}")),
+            Ok(resp) => Ok((resp, salt)),
+            Err(e) => Err((format!("Login failed: {e}"), None)),
         }
     });
 
     match result {
-        Ok(login_resp) => {
+        Ok((login_resp, salt)) => {
             // Save configuration
             let mut config = SyncConfig::new(
                 server_url.to_string(),
@@ -553,7 +570,7 @@ fn sync_login_impl(server_url: &str, username: &str, password: &str) -> String {
             serde_json::to_string(&ApiResponse::success(response))
                 .unwrap_or_else(|e| json_error(&e.to_string()))
         }
-        Err(e) => json_error(&e),
+        Err((e, _)) => json_error(&e),
     }
 }
 

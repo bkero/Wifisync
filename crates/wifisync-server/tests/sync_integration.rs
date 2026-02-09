@@ -113,6 +113,7 @@ async fn run_migrations(pool: &sqlx::SqlitePool) {
             id TEXT PRIMARY KEY,
             username TEXT UNIQUE NOT NULL,
             auth_key_hash TEXT NOT NULL,
+            auth_salt TEXT NOT NULL DEFAULT '',
             created_at TEXT NOT NULL
         )
         ",
@@ -227,10 +228,11 @@ fn create_test_router(state: AppState) -> axum::Router {
         let user_id = Uuid::new_v4().to_string();
         let auth_hash = bcrypt::hash(&req.auth_proof, 4).unwrap(); // Use cost 4 for faster tests
 
-        sqlx::query("INSERT INTO users (id, username, auth_key_hash, created_at) VALUES (?, ?, ?, ?)")
+        sqlx::query("INSERT INTO users (id, username, auth_key_hash, auth_salt, created_at) VALUES (?, ?, ?, ?, ?)")
             .bind(&user_id)
             .bind(&req.username)
             .bind(&auth_hash)
+            .bind(&req.auth_salt)
             .bind(Utc::now().to_rfc3339())
             .execute(&state.db)
             .await
@@ -291,6 +293,23 @@ fn create_test_router(state: AppState) -> axum::Router {
             "token": token,
             "expires_at": exp.to_rfc3339()
         })))
+    }
+
+    async fn get_salt(
+        State(state): State<AppState>,
+        Path(username): Path<String>,
+    ) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
+        let salt: Option<(String,)> =
+            sqlx::query_as("SELECT auth_salt FROM users WHERE username = ?")
+                .bind(&username)
+                .fetch_optional(&state.db)
+                .await
+                .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+
+        match salt {
+            Some((auth_salt,)) => Ok(Json(serde_json::json!({ "auth_salt": auth_salt }))),
+            None => Err((StatusCode::NOT_FOUND, "User not found".to_string())),
+        }
     }
 
     async fn push(
@@ -476,6 +495,7 @@ fn create_test_router(state: AppState) -> axum::Router {
         .route("/health", get(health))
         .route("/api/v1/users/register", post(register))
         .route("/api/v1/auth/login", post(login))
+        .route("/api/v1/auth/salt/:username", get(get_salt))
         .route("/api/v1/sync/push", post(push))
         .route("/api/v1/sync/pull", post(pull))
         .route("/api/v1/collections", get(list_collections))
@@ -562,6 +582,7 @@ async fn test_user_registration() {
     let req = RegisterRequest {
         username: "testuser".to_string(),
         auth_proof: "test_auth_proof_123".to_string(),
+        auth_salt: String::new(),
     };
 
     let resp = client.post("/api/v1/users/register", &req).await;
@@ -579,6 +600,7 @@ async fn test_duplicate_registration_fails() {
     let req = RegisterRequest {
         username: "duplicate_user".to_string(),
         auth_proof: "auth_proof".to_string(),
+        auth_salt: String::new(),
     };
 
     // First registration should succeed
@@ -599,6 +621,7 @@ async fn test_login_flow() {
     let register_req = RegisterRequest {
         username: "login_test_user".to_string(),
         auth_proof: "my_auth_proof".to_string(),
+        auth_salt: String::new(),
     };
     let resp = client.post("/api/v1/users/register", &register_req).await;
     assert_eq!(resp.status(), 200);
@@ -627,6 +650,7 @@ async fn test_login_wrong_password_fails() {
     let register_req = RegisterRequest {
         username: "wrong_pass_user".to_string(),
         auth_proof: "correct_password".to_string(),
+        auth_salt: String::new(),
     };
     client.post("/api/v1/users/register", &register_req).await;
 
@@ -649,6 +673,7 @@ async fn test_push_changes() {
     let register_req = RegisterRequest {
         username: "push_user".to_string(),
         auth_proof: "auth".to_string(),
+        auth_salt: String::new(),
     };
     client.post("/api/v1/users/register", &register_req).await;
 
@@ -696,6 +721,7 @@ async fn test_push_and_pull_roundtrip() {
     let register_req = RegisterRequest {
         username: "roundtrip_user".to_string(),
         auth_proof: "auth".to_string(),
+        auth_salt: String::new(),
     };
     client.post("/api/v1/users/register", &register_req).await;
 
@@ -757,6 +783,7 @@ async fn test_collection_crud() {
     let register_req = RegisterRequest {
         username: "collection_user".to_string(),
         auth_proof: "auth".to_string(),
+        auth_salt: String::new(),
     };
     client.post("/api/v1/users/register", &register_req).await;
 
@@ -807,6 +834,7 @@ async fn test_multiple_devices_sync() {
     let register_req = RegisterRequest {
         username: "multi_device_user".to_string(),
         auth_proof: "auth".to_string(),
+        auth_salt: String::new(),
     };
     client1.post("/api/v1/users/register", &register_req).await;
 
@@ -880,6 +908,7 @@ async fn test_push_multiple_changes() {
     let register_req = RegisterRequest {
         username: "multi_change_user".to_string(),
         auth_proof: "auth".to_string(),
+        auth_salt: String::new(),
     };
     client.post("/api/v1/users/register", &register_req).await;
 
@@ -942,6 +971,7 @@ async fn test_tombstone_sync() {
     let register_req = RegisterRequest {
         username: "tombstone_user".to_string(),
         auth_proof: "auth".to_string(),
+        auth_salt: String::new(),
     };
     client.post("/api/v1/users/register", &register_req).await;
 
@@ -1020,6 +1050,7 @@ async fn test_empty_conflicts_list() {
     let register_req = RegisterRequest {
         username: "conflicts_user".to_string(),
         auth_proof: "auth".to_string(),
+        auth_salt: String::new(),
     };
     client.post("/api/v1/users/register", &register_req).await;
 
@@ -1039,4 +1070,55 @@ async fn test_empty_conflicts_list() {
     let body: serde_json::Value = resp.json().await.unwrap();
     let conflicts = body["conflicts"].as_array().unwrap();
     assert!(conflicts.is_empty());
+}
+
+#[tokio::test]
+async fn test_relogin_after_logout() {
+    let server = TestServer::start().await;
+    let client = TestClient::new(&server.base_url());
+
+    let auth_proof = "stable_auth_proof";
+    let auth_salt = "c29tZV9zYWx0X3ZhbHVl"; // base64-encoded salt
+
+    // Register with salt
+    let register_req = RegisterRequest {
+        username: "relogin_user".to_string(),
+        auth_proof: auth_proof.to_string(),
+        auth_salt: auth_salt.to_string(),
+    };
+    let resp = client.post("/api/v1/users/register", &register_req).await;
+    assert_eq!(resp.status(), 200);
+
+    // First login succeeds
+    let login_req = LoginRequest {
+        username: "relogin_user".to_string(),
+        auth_proof: auth_proof.to_string(),
+        device_name: "Device 1".to_string(),
+    };
+    let resp = client.post("/api/v1/auth/login", &login_req).await;
+    assert_eq!(resp.status(), 200);
+
+    // Get salt from server
+    let resp = client.get("/api/v1/auth/salt/relogin_user").await;
+    assert_eq!(resp.status(), 200);
+    let body: serde_json::Value = resp.json().await.unwrap();
+    assert_eq!(body["auth_salt"].as_str().unwrap(), auth_salt);
+
+    // Re-login with same auth_proof (derived from same salt) succeeds
+    let login_req = LoginRequest {
+        username: "relogin_user".to_string(),
+        auth_proof: auth_proof.to_string(),
+        device_name: "Device 2".to_string(),
+    };
+    let resp = client.post("/api/v1/auth/login", &login_req).await;
+    assert_eq!(resp.status(), 200);
+}
+
+#[tokio::test]
+async fn test_get_salt_nonexistent_user_returns_404() {
+    let server = TestServer::start().await;
+    let client = TestClient::new(&server.base_url());
+
+    let resp = client.get("/api/v1/auth/salt/nonexistent_user").await;
+    assert_eq!(resp.status(), 404);
 }

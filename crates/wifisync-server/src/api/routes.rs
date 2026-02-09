@@ -28,6 +28,7 @@ pub fn create_router(state: AppState) -> Router {
         .route("/api/v1/users/register", post(handlers::auth::register))
         .route("/api/v1/auth/login", post(handlers::auth::login))
         .route("/api/v1/auth/refresh", post(handlers::auth::refresh))
+        .route("/api/v1/auth/salt/:username", get(handlers::auth::get_salt))
         .route("/api/v1/auth/logout", delete(handlers::auth::logout))
         // Sync endpoints
         .route("/api/v1/sync/push", post(handlers::sync::push))

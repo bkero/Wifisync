@@ -34,14 +34,27 @@ pub async fn find_user_by_id(pool: &SqlitePool, user_id: &str) -> ServerResult<O
 
 /// Create a new user
 pub async fn create_user(pool: &SqlitePool, user: &DbUser) -> ServerResult<()> {
-    sqlx::query("INSERT INTO users (id, username, auth_key_hash, created_at) VALUES (?, ?, ?, ?)")
+    sqlx::query("INSERT INTO users (id, username, auth_key_hash, auth_salt, created_at) VALUES (?, ?, ?, ?, ?)")
         .bind(&user.id)
         .bind(&user.username)
         .bind(&user.auth_key_hash)
+        .bind(&user.auth_salt)
         .bind(&user.created_at)
         .execute(pool)
         .await?;
     Ok(())
+}
+
+/// Find the auth salt for a user by username
+pub async fn find_salt_by_username(
+    pool: &SqlitePool,
+    username: &str,
+) -> ServerResult<Option<String>> {
+    let salt = sqlx::query_scalar::<_, String>("SELECT auth_salt FROM users WHERE username = ?")
+        .bind(username)
+        .fetch_optional(pool)
+        .await?;
+    Ok(salt)
 }
 
 // =============================================================================

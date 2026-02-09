@@ -66,6 +66,7 @@ impl TestServer {
             .route("/health", get(|| async { "ok" }))
             .route("/api/v1/users/register", post(handle_register))
             .route("/api/v1/auth/login", post(handle_login))
+            .route("/api/v1/auth/salt/:username", get(handle_get_salt))
             .route("/api/v1/auth/logout", delete(handle_logout))
             .route("/api/v1/sync/push", post(handle_push))
             .route("/api/v1/sync/pull", post(handle_pull))
@@ -128,6 +129,7 @@ async fn run_migrations(pool: &sqlx::SqlitePool) {
             id TEXT PRIMARY KEY,
             username TEXT UNIQUE NOT NULL,
             auth_key_hash TEXT NOT NULL,
+            auth_salt TEXT NOT NULL DEFAULT '',
             created_at TEXT NOT NULL
         )",
         "CREATE TABLE IF NOT EXISTS devices (
@@ -190,10 +192,11 @@ async fn handle_register(
     let user_id = Uuid::new_v4().to_string();
     let auth_hash = bcrypt::hash(&req.auth_proof, 4).unwrap();
 
-    sqlx::query("INSERT INTO users (id, username, auth_key_hash, created_at) VALUES (?, ?, ?, ?)")
+    sqlx::query("INSERT INTO users (id, username, auth_key_hash, auth_salt, created_at) VALUES (?, ?, ?, ?, ?)")
         .bind(&user_id)
         .bind(&req.username)
         .bind(&auth_hash)
+        .bind(&req.auth_salt)
         .bind(Utc::now().to_rfc3339())
         .execute(&state.db)
         .await
@@ -264,6 +267,24 @@ async fn handle_login(
 
 async fn handle_logout() -> axum::http::StatusCode {
     axum::http::StatusCode::NO_CONTENT
+}
+
+async fn handle_get_salt(
+    axum::extract::State(state): axum::extract::State<TestAppState>,
+    axum::extract::Path(username): axum::extract::Path<String>,
+) -> Result<axum::Json<serde_json::Value>, (axum::http::StatusCode, String)> {
+    use axum::http::StatusCode;
+
+    let salt: Option<(String,)> = sqlx::query_as("SELECT auth_salt FROM users WHERE username = ?")
+        .bind(&username)
+        .fetch_optional(&state.db)
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+
+    match salt {
+        Some((auth_salt,)) => Ok(axum::Json(serde_json::json!({ "auth_salt": auth_salt }))),
+        None => Err((StatusCode::NOT_FOUND, "User not found".to_string())),
+    }
 }
 
 async fn handle_push(
@@ -485,7 +506,7 @@ async fn test_sync_client_connection() {
     let client = SyncClient::new(&server.base_url()).expect("Failed to create client");
 
     // Health check via a simple request
-    let result = client.register("test_user", "test_auth_proof").await;
+    let result = client.register("test_user", "test_auth_proof", "").await;
     assert!(result.is_ok(), "Failed to register: {:?}", result.err());
 }
 
@@ -496,7 +517,7 @@ async fn test_sync_client_login() {
     let mut client = SyncClient::new(&server.base_url()).expect("Failed to create client");
 
     // Register
-    let result = client.register("login_test_user", "my_auth_proof").await;
+    let result = client.register("login_test_user", "my_auth_proof", "").await;
     assert!(result.is_ok(), "Registration failed: {:?}", result.err());
 
     // Login
@@ -518,7 +539,7 @@ async fn test_sync_client_login_wrong_password() {
 
     // Register
     client
-        .register("wrong_pass_user", "correct_password")
+        .register("wrong_pass_user", "correct_password", "")
         .await
         .unwrap();
 
@@ -585,8 +606,10 @@ async fn test_sync_client_full_workflow() {
     // Create client and register/login
     let mut client = SyncClient::new(&server.base_url()).expect("Failed to create client");
 
+    use base64::Engine;
+    let salt_b64 = base64::engine::general_purpose::STANDARD.encode(salt);
     client
-        .register("sync_workflow_user", &auth_proof)
+        .register("sync_workflow_user", &auth_proof, &salt_b64)
         .await
         .expect("Registration failed");
 
@@ -680,7 +703,7 @@ async fn test_sync_multiple_credentials() {
     let auth_proof = encryption.auth_proof();
 
     let mut client = SyncClient::new(&server.base_url()).unwrap();
-    client.register("multi_cred_user", &auth_proof).await.unwrap();
+    client.register("multi_cred_user", &auth_proof, "").await.unwrap();
     let login_resp = client
         .login("multi_cred_user", &auth_proof, "Test Device")
         .await
@@ -762,7 +785,7 @@ async fn test_sync_between_devices() {
 
     // Device 1: Register and login
     let mut client1 = SyncClient::new(&server.base_url()).unwrap();
-    client1.register("multi_device_user", &auth_proof).await.unwrap();
+    client1.register("multi_device_user", &auth_proof, "").await.unwrap();
     let login1 = client1
         .login("multi_device_user", &auth_proof, "Device 1")
         .await
@@ -877,7 +900,7 @@ async fn test_sync_credential_deletion() {
     let auth_proof = encryption.auth_proof();
 
     let mut client = SyncClient::new(&server.base_url()).unwrap();
-    client.register("deletion_user", &auth_proof).await.unwrap();
+    client.register("deletion_user", &auth_proof, "").await.unwrap();
     let login_resp = client
         .login("deletion_user", &auth_proof, "Test Device")
         .await
@@ -954,7 +977,7 @@ async fn test_sync_logout_clears_config() {
 
     // Login
     let mut client = SyncClient::new(&server.base_url()).unwrap();
-    client.register("logout_test_user", &auth_proof).await.unwrap();
+    client.register("logout_test_user", &auth_proof, "").await.unwrap();
     let login_resp = client
         .login("logout_test_user", &auth_proof, "Test Device")
         .await
@@ -978,4 +1001,68 @@ async fn test_sync_logout_clears_config() {
     state_manager.delete_config().unwrap();
 
     assert!(!state_manager.is_configured());
+}
+
+/// Test re-login: register, login, get_salt, derive same proof, login again
+#[tokio::test]
+async fn test_sync_client_relogin() {
+    let server = TestServer::start().await;
+
+    let password = "my_master_password";
+    let salt = generate_salt();
+
+    // First login: register with salt
+    let encryption = SyncEncryption::from_password(password, &salt).unwrap();
+    let auth_proof = encryption.auth_proof();
+
+    use base64::Engine;
+    let salt_b64 = base64::engine::general_purpose::STANDARD.encode(salt);
+
+    let mut client = SyncClient::new(&server.base_url()).unwrap();
+    client
+        .register("relogin_user", &auth_proof, &salt_b64)
+        .await
+        .unwrap();
+    let login1 = client
+        .login("relogin_user", &auth_proof, "Device 1")
+        .await
+        .unwrap();
+    assert!(!login1.device_id.is_empty());
+
+    // Simulate re-login: get salt from server, derive same keys
+    let retrieved_salt_b64 = client
+        .get_salt("relogin_user")
+        .await
+        .unwrap()
+        .expect("Salt should exist for registered user");
+    assert_eq!(retrieved_salt_b64, salt_b64);
+
+    let retrieved_salt_bytes = base64::engine::general_purpose::STANDARD
+        .decode(&retrieved_salt_b64)
+        .unwrap();
+    let retrieved_salt: [u8; 32] = retrieved_salt_bytes.try_into().unwrap();
+
+    let encryption2 = SyncEncryption::from_password(password, &retrieved_salt).unwrap();
+    let auth_proof2 = encryption2.auth_proof();
+
+    // Auth proofs should be identical
+    assert_eq!(auth_proof, auth_proof2);
+
+    // Re-login should succeed
+    let mut client2 = SyncClient::new(&server.base_url()).unwrap();
+    let login2 = client2
+        .login("relogin_user", &auth_proof2, "Device 2")
+        .await
+        .unwrap();
+    assert!(!login2.device_id.is_empty());
+}
+
+/// Test get_salt returns None for nonexistent user
+#[tokio::test]
+async fn test_sync_client_get_salt_nonexistent() {
+    let server = TestServer::start().await;
+    let client = SyncClient::new(&server.base_url()).unwrap();
+
+    let result = client.get_salt("nonexistent_user").await.unwrap();
+    assert!(result.is_none());
 }

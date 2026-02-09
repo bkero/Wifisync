@@ -59,8 +59,27 @@ pub async fn login(server_url: &str, username: &str, json: bool) -> Result<()> {
         bail!("Password cannot be empty");
     }
 
-    // Generate salt for key derivation
-    let salt = generate_salt();
+    // Create client
+    let mut client = SyncClient::new(server_url)?;
+
+    // Try to get existing salt from server (user may already be registered)
+    let (salt, is_new_user) = match client.get_salt(username).await? {
+        Some(salt_b64) => {
+            // User exists, decode the stored salt
+            use base64::Engine;
+            let salt_bytes = base64::engine::general_purpose::STANDARD
+                .decode(&salt_b64)
+                .map_err(|e| anyhow::anyhow!("Invalid salt from server: {e}"))?;
+            let salt: [u8; 32] = salt_bytes
+                .try_into()
+                .map_err(|_| anyhow::anyhow!("Salt has wrong length"))?;
+            (salt, false)
+        }
+        None => {
+            // New user, generate fresh salt
+            (generate_salt(), true)
+        }
+    };
 
     // Derive keys
     let encryption = SyncEncryption::from_password(&password, &salt)?;
@@ -71,20 +90,20 @@ pub async fn login(server_url: &str, username: &str, json: bool) -> Result<()> {
         .map(|h| h.to_string_lossy().to_string())
         .unwrap_or_else(|_| "Unknown Device".to_string());
 
-    // Create client and try to login
-    let mut client = SyncClient::new(server_url)?;
-
-    // First, try to register (in case user doesn't exist)
-    match client.register(username, &auth_proof).await {
-        Ok(_) => {
-            if !json {
-                println!("{} Created new account", style("Info:").blue());
+    // Register if new user
+    if is_new_user {
+        use base64::Engine;
+        let salt_b64 = base64::engine::general_purpose::STANDARD.encode(salt);
+        match client.register(username, &auth_proof, &salt_b64).await {
+            Ok(_) => {
+                if !json {
+                    println!("{} Created new account", style("Info:").blue());
+                }
             }
-        }
-        Err(e) => {
-            // If registration fails because user exists, that's fine
-            if !e.to_string().contains("already exists") {
-                tracing::debug!("Registration failed (may be expected): {}", e);
+            Err(e) => {
+                if !e.to_string().contains("already exists") {
+                    return Err(e.into());
+                }
             }
         }
     }

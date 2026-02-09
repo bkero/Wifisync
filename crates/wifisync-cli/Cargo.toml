@@ -43,6 +43,7 @@ hostname = "0.4"
 uuid = { workspace = true }
 chrono = { workspace = true }
 serde = { workspace = true }
+base64 = "0.21"
 
 # Logging
 tracing = { workspace = true }

@@ -13,17 +13,20 @@ pub struct DbUser {
     pub username: String,
     /// Bcrypt hash of the auth key
     pub auth_key_hash: String,
+    /// Base64-encoded salt used for key derivation
+    pub auth_salt: String,
     /// Account creation timestamp
     pub created_at: String,
 }
 
 impl DbUser {
     /// Create a new user record
-    pub fn new(username: String, auth_key_hash: String) -> Self {
+    pub fn new(username: String, auth_key_hash: String, auth_salt: String) -> Self {
         Self {
             id: Uuid::new_v4().to_string(),
             username,
             auth_key_hash,
+            auth_salt,
             created_at: Utc::now().to_rfc3339(),
         }
     }
