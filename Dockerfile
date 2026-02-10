@@ -63,6 +63,7 @@ FROM debian:bookworm-slim
 # Install runtime dependencies
 RUN apt-get update && apt-get install -y \
     ca-certificates \
+    curl \
     sqlite3 \
     && rm -rf /var/lib/apt/lists/*
 
@@ -93,9 +94,9 @@ ENV RUST_LOG=info
 # Expose port
 EXPOSE 8080
 
-# Health check
-HEALTHCHECK --interval=30s --timeout=5s --start-period=5s --retries=3 \
-    CMD sqlite3 /data/wifisync.db "SELECT 1" 2>/dev/null || exit 1
+# Health check — verify the HTTP server is responding, not just the database file
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+    CMD curl -f http://localhost:8080/health || exit 1
 
 # Run the server
 CMD ["wifisync-server"]

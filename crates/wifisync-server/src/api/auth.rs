@@ -37,10 +37,6 @@ impl Claims {
         }
     }
 
-    /// Check if the token is expired
-    pub fn is_expired(&self) -> bool {
-        Utc::now().timestamp() > self.exp
-    }
 }
 
 /// Create a JWT token
@@ -61,10 +57,14 @@ pub fn create_token(
 
 /// Validate and decode a JWT token
 pub fn validate_token(token: &str, secret: &str) -> Result<Claims, jsonwebtoken::errors::Error> {
+    let mut validation = Validation::default();
+    // Explicitly enforce expiration validation (default in v9.x, but be explicit)
+    validation.validate_exp = true;
+
     let token_data = decode::<Claims>(
         token,
         &DecodingKey::from_secret(secret.as_bytes()),
-        &Validation::default(),
+        &validation,
     )?;
     Ok(token_data.claims)
 }
@@ -99,13 +99,9 @@ impl FromRequestParts<AppState> for AuthenticatedUser {
             .strip_prefix("Bearer ")
             .ok_or(ServerError::Unauthorized)?;
 
-        // Validate token
+        // Validate token (decode rejects expired tokens via validate_exp)
         let claims = validate_token(token, &state.config.jwt_secret)
             .map_err(|_| ServerError::TokenExpired)?;
-
-        if claims.is_expired() {
-            return Err(ServerError::TokenExpired);
-        }
 
         Ok(AuthenticatedUser {
             user_id: claims.sub,
@@ -129,13 +125,42 @@ mod tests {
 
         assert_eq!(claims.sub, user_id);
         assert_eq!(claims.device_id, device_id);
-        assert!(!claims.is_expired());
+        assert!(claims.exp > Utc::now().timestamp());
     }
 
     #[test]
     fn test_invalid_secret() {
         let token = create_token("user", "device", "secret1", 24).unwrap();
         let result = validate_token(&token, "secret2");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_expired_token_rejected() {
+        // Create a token with 0 hours expiration (already expired)
+        let claims = Claims {
+            sub: "user".to_string(),
+            device_id: "device".to_string(),
+            exp: (Utc::now() - Duration::hours(1)).timestamp(),
+            iat: (Utc::now() - Duration::hours(2)).timestamp(),
+        };
+        let secret = "test_secret";
+        let token = encode(
+            &Header::default(),
+            &claims,
+            &EncodingKey::from_secret(secret.as_bytes()),
+        )
+        .unwrap();
+
+        let result = validate_token(&token, secret);
+        assert!(result.is_err(), "Expired token must be rejected at decode level");
+    }
+
+    #[test]
+    fn test_empty_secret_tokens_differ() {
+        // Tokens signed with empty secret should not validate with a real secret
+        let token = create_token("user", "device", "", 24).unwrap();
+        let result = validate_token(&token, "real_secret");
         assert!(result.is_err());
     }
 }

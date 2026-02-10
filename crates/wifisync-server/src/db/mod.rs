@@ -14,6 +14,12 @@ pub async fn init_db(database_url: &str) -> anyhow::Result<SqlitePool> {
         .connect(database_url)
         .await?;
 
+    // Enable WAL mode for better concurrent read performance
+    sqlx::query("PRAGMA journal_mode=WAL")
+        .execute(&pool)
+        .await?;
+    tracing::info!("SQLite WAL mode enabled");
+
     // Run migrations
     run_migrations(&pool).await?;
 

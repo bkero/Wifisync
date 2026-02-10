@@ -1,6 +1,7 @@
 //! API route definitions
 
 use axum::{
+    http::{header, Method},
     routing::{delete, get, post},
     Router,
 };
@@ -14,11 +15,24 @@ use crate::AppState;
 
 /// Create the API router with all routes
 pub fn create_router(state: AppState) -> Router {
-    // CORS configuration
-    let cors = CorsLayer::new()
-        .allow_origin(Any)
-        .allow_methods(Any)
-        .allow_headers(Any);
+    // CORS configuration — restrict methods/headers, origins configurable
+    let cors = {
+        let base = CorsLayer::new()
+            .allow_methods([Method::GET, Method::POST, Method::DELETE, Method::OPTIONS])
+            .allow_headers([header::CONTENT_TYPE, header::AUTHORIZATION]);
+
+        if state.config.cors_allowed_origins.is_empty() {
+            base.allow_origin(Any)
+        } else {
+            let origins: Vec<_> = state
+                .config
+                .cors_allowed_origins
+                .iter()
+                .filter_map(|o| o.parse().ok())
+                .collect();
+            base.allow_origin(origins)
+        }
+    };
 
     // Build router
     Router::new()

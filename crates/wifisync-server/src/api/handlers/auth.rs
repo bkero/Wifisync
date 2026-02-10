@@ -36,7 +36,7 @@ pub async fn register(
     }
 
     // Hash the auth proof (the client has already derived this from their master password)
-    let auth_key_hash = bcrypt::hash(&req.auth_proof, bcrypt::DEFAULT_COST)?;
+    let auth_key_hash = bcrypt::hash(&req.auth_proof, state.config.bcrypt_cost)?;
 
     // Create user
     let user = DbUser::new(req.username, auth_key_hash, req.auth_salt);
@@ -67,7 +67,7 @@ pub async fn login(
     }
 
     // Create or update device
-    let device_token_hash = bcrypt::hash(&req.auth_proof, bcrypt::DEFAULT_COST)?;
+    let device_token_hash = bcrypt::hash(&req.auth_proof, state.config.bcrypt_cost)?;
     let device = DbDevice::new(user.id.clone(), req.device_name, device_token_hash);
     queries::create_device(&state.db, &device).await?;
 
