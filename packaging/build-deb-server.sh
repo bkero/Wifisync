@@ -10,6 +10,8 @@
 
 set -euo pipefail
 
+export DOCKER_BUILDKIT=1
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
@@ -60,12 +62,25 @@ run_build() {
     # Create dist directory
     mkdir -p "$PROJECT_ROOT/dist"
 
+    # Build docker run arguments
+    local docker_args=(
+        --rm
+        -v cargo-registry:/root/.cargo/registry
+        -v cargo-git:/root/.cargo/git
+        -v "$PROJECT_ROOT:/build:rw"
+        -e "PKG_VERSION=${PKG_VERSION}"
+        -e "DEBIAN_DIR=deb-server"
+    )
+
+    # Pass through prebuilt binary path if set
+    if [[ -n "${PREBUILT_BINARY:-}" ]]; then
+        docker_args+=(-e "PREBUILT_BINARY=${PREBUILT_BINARY}")
+    fi
+
+    docker_args+=("$IMAGE_NAME")
+
     # Run the container with server debian directory
-    docker run --rm \
-        -v "$PROJECT_ROOT:/build:rw" \
-        -e "PKG_VERSION=${PKG_VERSION}" \
-        -e "DEBIAN_DIR=deb-server" \
-        "$IMAGE_NAME"
+    docker run "${docker_args[@]}"
 
     info "Docker build completed"
 }

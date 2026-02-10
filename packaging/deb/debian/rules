@@ -7,7 +7,7 @@ export CARGO_HOME = $(CURDIR)/debian/.cargo
 	dh $@
 
 override_dh_auto_build:
-	cargo build --release --locked
+	@if [ -z "$$SKIP_CARGO_BUILD" ]; then cargo build --release --locked; else echo "Using prebuilt binary"; fi
 
 override_dh_auto_install:
 	# Install binary
@@ -18,7 +18,7 @@ override_dh_auto_install:
 		debian/wifisync/usr/lib/systemd/user/wifisync-agent.service
 
 override_dh_auto_test:
-	cargo test --release --locked
+	@if [ -z "$$SKIP_CARGO_BUILD" ]; then cargo test --release --locked; else echo "Skipping tests for prebuilt binary"; fi
 
 override_dh_auto_clean:
 	cargo clean || true

@@ -96,6 +96,25 @@ build_binary() {
     info "Binary built: dist/wifisync"
 }
 
+# Build all release binaries locally (compile once for packaging)
+build_binaries() {
+    info "Building all release binaries locally..."
+    cd "$PROJECT_ROOT"
+    cargo build --release -p wifisync -p wifisync-server
+
+    # Verify binaries were built
+    if [[ ! -f "$PROJECT_ROOT/target/release/wifisync" ]]; then
+        error "Failed to build wifisync binary"
+    fi
+    if [[ ! -f "$PROJECT_ROOT/target/release/wifisync-server" ]]; then
+        error "Failed to build wifisync-server binary"
+    fi
+
+    info "All binaries built successfully"
+    info "  - target/release/wifisync"
+    info "  - target/release/wifisync-server"
+}
+
 # Clean build artifacts
 clean() {
     info "Cleaning build artifacts..."
@@ -151,13 +170,30 @@ build_server_deb() {
     "$SCRIPT_DIR/build-deb-server.sh"
 }
 
-# Build both server packages
+# Build both server packages (in parallel)
 build_server() {
     info "Building server packages..."
     echo ""
-    build_server_rpm
-    echo ""
-    build_server_deb
+
+    build_server_rpm &
+    local pid1=$!
+    build_server_deb &
+    local pid2=$!
+
+    local failed=0
+    if ! wait "$pid1"; then
+        warn "Server RPM build failed"
+        failed=1
+    fi
+    if ! wait "$pid2"; then
+        warn "Server DEB build failed"
+        failed=1
+    fi
+
+    if [[ $failed -ne 0 ]]; then
+        error "One or more server builds failed"
+    fi
+
     echo ""
     info "Server packages complete!"
 }
@@ -222,12 +258,10 @@ build_android() {
 
     cd "$PROJECT_ROOT/android"
 
-    # Build debug APK
+    # Build debug and release APKs in a single Gradle invocation
     # --no-configuration-cache avoids issues with Java 21
-    ./gradlew assembleDebug --no-daemon --no-configuration-cache
-
-    # Build release APK (unsigned)
-    ./gradlew assembleRelease --no-daemon --no-configuration-cache
+    # --parallel enables concurrent task execution
+    ./gradlew assembleDebug assembleRelease --parallel --no-configuration-cache
 
     # Copy APKs to dist directory
     info "Copying APKs to dist..."
@@ -258,33 +292,54 @@ build_all() {
     info "Building all packages..."
     echo ""
 
+    # Step 1: Compile binaries once locally
+    build_binaries
+
+    # Set prebuilt binary paths for Docker packaging containers
+    export PREBUILT_BINARY
+
+    # Step 2: Package in parallel
+    local pids=()
+
     # Build Linux packages (require Docker)
     if command -v docker &> /dev/null && docker info &> /dev/null 2>&1; then
-        info "Building CLI packages..."
-        build_rpm
-        echo ""
+        info "Launching parallel packaging jobs..."
 
-        build_deb
-        echo ""
+        PREBUILT_BINARY=/build/target/release/wifisync build_rpm &
+        pids+=($!)
 
-        info "Building server packages..."
-        build_server_rpm
-        echo ""
+        PREBUILT_BINARY=/build/target/release/wifisync build_deb &
+        pids+=($!)
 
-        build_server_deb
-        echo ""
+        PREBUILT_BINARY=/build/target/release/wifisync-server build_server_rpm &
+        pids+=($!)
+
+        PREBUILT_BINARY=/build/target/release/wifisync-server build_server_deb &
+        pids+=($!)
     else
         warn "Docker not available, skipping RPM and DEB builds"
         echo ""
     fi
 
-    # Build Android (requires Android SDK)
+    # Android can run in parallel too
     if [[ -n "${ANDROID_HOME:-}" ]] || [[ -n "${ANDROID_SDK_ROOT:-}" ]]; then
-        build_android
-        echo ""
+        build_android &
+        pids+=($!)
     else
         warn "Android SDK not configured, skipping Android build"
         echo ""
+    fi
+
+    # Wait for all and check for failures
+    local failed=0
+    for pid in "${pids[@]}"; do
+        if ! wait "$pid"; then
+            failed=1
+        fi
+    done
+
+    if [[ $failed -ne 0 ]]; then
+        error "One or more builds failed"
     fi
 
     info "All available builds completed!"

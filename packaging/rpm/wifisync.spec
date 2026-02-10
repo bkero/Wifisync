@@ -34,7 +34,9 @@ Features:
 %autosetup -n %{name}-%{version}
 
 %build
+%if ! 0%{?skip_build}
 cargo build --release --locked
+%endif
 
 %install
 # Install binary

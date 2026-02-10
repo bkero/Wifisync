@@ -1,3 +1,4 @@
+# syntax=docker/dockerfile:1
 # Dockerfile for building Wifisync DEB packages
 FROM ubuntu:24.04
 

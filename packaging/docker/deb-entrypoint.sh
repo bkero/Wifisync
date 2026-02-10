@@ -8,8 +8,18 @@ set -euo pipefail
 PKG_NAME="wifisync"
 PKG_VERSION="${PKG_VERSION:-0.1.0}"
 DEBIAN_DIR="${DEBIAN_DIR:-deb}"
+PREBUILT_BINARY="${PREBUILT_BINARY:-}"
+export SKIP_CARGO_BUILD="${SKIP_CARGO_BUILD:-}"
 
 echo "==> Building Wifisync DEB v${PKG_VERSION} (debian: ${DEBIAN_DIR})"
+
+# If a prebuilt binary is provided, place it where dpkg-buildpackage expects it
+if [[ -n "$PREBUILT_BINARY" ]]; then
+    echo "==> Using prebuilt binary: ${PREBUILT_BINARY}"
+    mkdir -p /build/target/release
+    cp "$PREBUILT_BINARY" /build/target/release/
+    export SKIP_CARGO_BUILD=1
+fi
 
 # Setup build directory
 echo "==> Setting up build directory..."
@@ -20,12 +30,22 @@ rm -rf "$BUILD_DIR"
 mkdir -p "$PKG_DIR"
 
 # Copy source files
-rsync -a \
-    --exclude='target' \
-    --exclude='.git' \
-    --exclude='dist' \
-    --exclude='build-deb' \
-    /build/ "$PKG_DIR/"
+if [[ -n "$PREBUILT_BINARY" ]]; then
+    # Include target/release/ so the prebuilt binary is available in the build tree
+    rsync -a \
+        --exclude='target/debug' \
+        --exclude='.git' \
+        --exclude='dist' \
+        --exclude='build-deb' \
+        /build/ "$PKG_DIR/"
+else
+    rsync -a \
+        --exclude='target' \
+        --exclude='.git' \
+        --exclude='dist' \
+        --exclude='build-deb' \
+        /build/ "$PKG_DIR/"
+fi
 
 # Copy debian directory
 cp -r "/build/packaging/${DEBIAN_DIR}/debian" "$PKG_DIR/"

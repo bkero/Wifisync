@@ -33,7 +33,9 @@ Features:
 %autosetup -n wifisync-%{version}
 
 %build
+%if ! 0%{?skip_build}
 cargo build --release --locked -p wifisync-server
+%endif
 
 %install
 # Install binary
