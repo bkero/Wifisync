@@ -21,7 +21,7 @@ override_dh_auto_test:
 	@if [ -z "$$SKIP_CARGO_BUILD" ]; then cargo test --release --locked; else echo "Skipping tests for prebuilt binary"; fi
 
 override_dh_auto_clean:
-	cargo clean || true
+	@if [ -z "$$SKIP_CARGO_BUILD" ]; then cargo clean || true; fi
 	rm -rf $(CARGO_HOME)
 
 # Skip dh_installsystemd - user service is installed manually above

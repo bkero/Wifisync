@@ -24,7 +24,7 @@ override_dh_auto_test:
 	@if [ -z "$$SKIP_CARGO_BUILD" ]; then cargo test --release --locked -p wifisync-server; else echo "Skipping tests for prebuilt binary"; fi
 
 override_dh_auto_clean:
-	cargo clean || true
+	@if [ -z "$$SKIP_CARGO_BUILD" ]; then cargo clean || true; fi
 	rm -rf $(CARGO_HOME)
 
 override_dh_installsystemd:
