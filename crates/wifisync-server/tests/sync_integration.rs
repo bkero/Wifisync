@@ -211,14 +211,26 @@ fn create_test_router(state: AppState) -> axum::Router {
         Json(req): Json<RegisterRequest>,
     ) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
         // Check if user exists
-        let existing: Option<(String,)> =
-            sqlx::query_as("SELECT id FROM users WHERE username = ?")
+        let existing: Option<(String, String)> =
+            sqlx::query_as("SELECT id, auth_salt FROM users WHERE username = ?")
                 .bind(&req.username)
                 .fetch_optional(&state.db)
                 .await
                 .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
 
-        if existing.is_some() {
+        if let Some((user_id, auth_salt)) = existing {
+            if auth_salt.is_empty() {
+                // Legacy user — allow re-registration to upgrade credentials
+                let auth_hash = bcrypt::hash(&req.auth_proof, 4).unwrap();
+                sqlx::query("UPDATE users SET auth_key_hash = ?, auth_salt = ? WHERE username = ?")
+                    .bind(&auth_hash)
+                    .bind(&req.auth_salt)
+                    .bind(&req.username)
+                    .execute(&state.db)
+                    .await
+                    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+                return Ok(Json(serde_json::json!({ "user_id": user_id })));
+            }
             return Err((
                 StatusCode::BAD_REQUEST,
                 "Username already exists".to_string(),
@@ -307,8 +319,10 @@ fn create_test_router(state: AppState) -> axum::Router {
                 .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
 
         match salt {
-            Some((auth_salt,)) => Ok(Json(serde_json::json!({ "auth_salt": auth_salt }))),
-            None => Err((StatusCode::NOT_FOUND, "User not found".to_string())),
+            Some((auth_salt,)) if !auth_salt.is_empty() => {
+                Ok(Json(serde_json::json!({ "auth_salt": auth_salt })))
+            }
+            _ => Err((StatusCode::NOT_FOUND, "User not found".to_string())),
         }
     }
 
@@ -600,14 +614,14 @@ async fn test_duplicate_registration_fails() {
     let req = RegisterRequest {
         username: "duplicate_user".to_string(),
         auth_proof: "auth_proof".to_string(),
-        auth_salt: String::new(),
+        auth_salt: "c29tZV9zYWx0".to_string(), // non-empty salt
     };
 
     // First registration should succeed
     let resp = client.post("/api/v1/users/register", &req).await;
     assert_eq!(resp.status(), 200);
 
-    // Second registration should fail
+    // Second registration should fail (user already has a salt)
     let resp = client.post("/api/v1/users/register", &req).await;
     assert_eq!(resp.status(), 400);
 }
@@ -1121,4 +1135,57 @@ async fn test_get_salt_nonexistent_user_returns_404() {
 
     let resp = client.get("/api/v1/auth/salt/nonexistent_user").await;
     assert_eq!(resp.status(), 404);
+}
+
+#[tokio::test]
+async fn test_legacy_user_reregistration() {
+    let server = TestServer::start().await;
+    let client = TestClient::new(&server.base_url());
+
+    // Register a legacy user (empty salt, simulating pre-migration user)
+    let register_req = RegisterRequest {
+        username: "legacy_user".to_string(),
+        auth_proof: "old_auth_proof".to_string(),
+        auth_salt: String::new(), // Empty salt = legacy user
+    };
+    let resp = client.post("/api/v1/users/register", &register_req).await;
+    assert_eq!(resp.status(), 200);
+
+    // get_salt should return 404 for legacy user (empty salt)
+    let resp = client.get("/api/v1/auth/salt/legacy_user").await;
+    assert_eq!(resp.status(), 404);
+
+    // Re-register with a real salt — should succeed (upgrades legacy user)
+    let new_salt = "bmV3X3NhbHRfdmFsdWU="; // base64("new_salt_value")
+    let register_req = RegisterRequest {
+        username: "legacy_user".to_string(),
+        auth_proof: "new_auth_proof".to_string(),
+        auth_salt: new_salt.to_string(),
+    };
+    let resp = client.post("/api/v1/users/register", &register_req).await;
+    assert_eq!(resp.status(), 200);
+
+    // get_salt should now return the new salt
+    let resp = client.get("/api/v1/auth/salt/legacy_user").await;
+    assert_eq!(resp.status(), 200);
+    let body: serde_json::Value = resp.json().await.unwrap();
+    assert_eq!(body["auth_salt"].as_str().unwrap(), new_salt);
+
+    // Login with new credentials should succeed
+    let login_req = LoginRequest {
+        username: "legacy_user".to_string(),
+        auth_proof: "new_auth_proof".to_string(),
+        device_name: "Test Device".to_string(),
+    };
+    let resp = client.post("/api/v1/auth/login", &login_req).await;
+    assert_eq!(resp.status(), 200);
+
+    // Subsequent re-registration should fail (user now has a real salt)
+    let register_req = RegisterRequest {
+        username: "legacy_user".to_string(),
+        auth_proof: "another_proof".to_string(),
+        auth_salt: "YW5vdGhlcl9zYWx0".to_string(),
+    };
+    let resp = client.post("/api/v1/users/register", &register_req).await;
+    assert_eq!(resp.status(), 400);
 }

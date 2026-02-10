@@ -9,19 +9,33 @@ use sqlx::sqlite::{SqlitePool, SqlitePoolOptions};
 pub async fn init_db(database_url: &str) -> anyhow::Result<SqlitePool> {
     tracing::info!("Initializing database connection");
 
-    let pool = SqlitePoolOptions::new()
-        .max_connections(5)
+    // Run migrations on a dedicated connection first, then create the
+    // application pool afterward. This prevents stale schema caches in
+    // pool connections when ALTER TABLE runs in WAL mode — other pool
+    // connections may not see the new columns, causing panics in FromRow.
+    let migrate_pool = SqlitePoolOptions::new()
+        .max_connections(1)
         .connect(database_url)
         .await?;
 
     // Enable WAL mode for better concurrent read performance
     sqlx::query("PRAGMA journal_mode=WAL")
-        .execute(&pool)
+        .execute(&migrate_pool)
         .await?;
     tracing::info!("SQLite WAL mode enabled");
 
     // Run migrations
-    run_migrations(&pool).await?;
+    run_migrations(&migrate_pool).await?;
+
+    // Close the migration connection so all application pool connections
+    // are created fresh with the finalized schema visible
+    migrate_pool.close().await;
+
+    // Create the application pool
+    let pool = SqlitePoolOptions::new()
+        .max_connections(5)
+        .connect(database_url)
+        .await?;
 
     Ok(pool)
 }

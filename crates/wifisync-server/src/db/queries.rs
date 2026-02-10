@@ -57,6 +57,22 @@ pub async fn find_salt_by_username(
     Ok(salt)
 }
 
+/// Update a user's auth credentials (for re-registration of legacy users)
+pub async fn update_user_credentials(
+    pool: &SqlitePool,
+    username: &str,
+    auth_key_hash: &str,
+    auth_salt: &str,
+) -> ServerResult<()> {
+    sqlx::query("UPDATE users SET auth_key_hash = ?, auth_salt = ? WHERE username = ?")
+        .bind(auth_key_hash)
+        .bind(auth_salt)
+        .bind(username)
+        .execute(pool)
+        .await?;
+    Ok(())
+}
+
 // =============================================================================
 // Device Queries
 // =============================================================================

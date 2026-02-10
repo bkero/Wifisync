@@ -176,13 +176,26 @@ async fn handle_register(
     use chrono::Utc;
 
     // Check if user exists
-    let existing: Option<(String,)> = sqlx::query_as("SELECT id FROM users WHERE username = ?")
-        .bind(&req.username)
-        .fetch_optional(&state.db)
-        .await
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    let existing: Option<(String, String)> =
+        sqlx::query_as("SELECT id, auth_salt FROM users WHERE username = ?")
+            .bind(&req.username)
+            .fetch_optional(&state.db)
+            .await
+            .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
 
-    if existing.is_some() {
+    if let Some((user_id, auth_salt)) = existing {
+        if auth_salt.is_empty() {
+            // Legacy user — allow re-registration to upgrade credentials
+            let auth_hash = bcrypt::hash(&req.auth_proof, 4).unwrap();
+            sqlx::query("UPDATE users SET auth_key_hash = ?, auth_salt = ? WHERE username = ?")
+                .bind(&auth_hash)
+                .bind(&req.auth_salt)
+                .bind(&req.username)
+                .execute(&state.db)
+                .await
+                .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+            return Ok(axum::Json(serde_json::json!({ "user_id": user_id })));
+        }
         return Err((
             StatusCode::BAD_REQUEST,
             "Username already exists".to_string(),
@@ -282,8 +295,10 @@ async fn handle_get_salt(
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
 
     match salt {
-        Some((auth_salt,)) => Ok(axum::Json(serde_json::json!({ "auth_salt": auth_salt }))),
-        None => Err((StatusCode::NOT_FOUND, "User not found".to_string())),
+        Some((auth_salt,)) if !auth_salt.is_empty() => {
+            Ok(axum::Json(serde_json::json!({ "auth_salt": auth_salt })))
+        }
+        _ => Err((StatusCode::NOT_FOUND, "User not found".to_string())),
     }
 }
 

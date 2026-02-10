@@ -29,7 +29,22 @@ pub async fn register(
     tracing::info!("User registration request for: {}", req.username);
 
     // Check if username already exists
-    if let Some(_) = queries::find_user_by_username(&state.db, &req.username).await? {
+    if let Some(existing) = queries::find_user_by_username(&state.db, &req.username).await? {
+        if existing.auth_salt.is_empty() {
+            // Legacy user without salt — allow re-registration to upgrade credentials
+            tracing::info!("Re-registering legacy user: {}", req.username);
+            let auth_key_hash = bcrypt::hash(&req.auth_proof, state.config.bcrypt_cost)?;
+            queries::update_user_credentials(
+                &state.db,
+                &req.username,
+                &auth_key_hash,
+                &req.auth_salt,
+            )
+            .await?;
+            return Ok(Json(RegisterResponse {
+                user_id: existing.uuid(),
+            }));
+        }
         return Err(ServerError::Validation {
             message: "Username already exists".to_string(),
         });
@@ -126,6 +141,7 @@ pub async fn get_salt(
 
     let salt = queries::find_salt_by_username(&state.db, &username)
         .await?
+        .filter(|s| !s.is_empty()) // Treat empty salt as non-existent (legacy user)
         .ok_or(ServerError::not_found("User"))?;
 
     Ok(Json(SaltResponse { auth_salt: salt }))
