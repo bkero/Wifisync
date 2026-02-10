@@ -12,11 +12,15 @@ PREBUILT_BINARY="${PREBUILT_BINARY:-}"
 
 echo "==> Building Wifisync RPM v${PKG_VERSION} (spec: ${SPEC_FILE})"
 
-# If a prebuilt binary is provided, place it where rpmbuild expects it
+# If a prebuilt binary is provided, ensure it's in target/release/
 if [[ -n "$PREBUILT_BINARY" ]]; then
     echo "==> Using prebuilt binary: ${PREBUILT_BINARY}"
     mkdir -p /build/target/release
-    cp "$PREBUILT_BINARY" /build/target/release/
+    # Skip copy if already in the right place (mounted volume)
+    local_dest="/build/target/release/$(basename "$PREBUILT_BINARY")"
+    if [[ "$(realpath "$PREBUILT_BINARY")" != "$(realpath "$local_dest")" ]]; then
+        cp "$PREBUILT_BINARY" /build/target/release/
+    fi
 fi
 
 # Create source tarball

@@ -13,11 +13,15 @@ export SKIP_CARGO_BUILD="${SKIP_CARGO_BUILD:-}"
 
 echo "==> Building Wifisync DEB v${PKG_VERSION} (debian: ${DEBIAN_DIR})"
 
-# If a prebuilt binary is provided, place it where dpkg-buildpackage expects it
+# If a prebuilt binary is provided, ensure it's in target/release/
 if [[ -n "$PREBUILT_BINARY" ]]; then
     echo "==> Using prebuilt binary: ${PREBUILT_BINARY}"
     mkdir -p /build/target/release
-    cp "$PREBUILT_BINARY" /build/target/release/
+    # Skip copy if already in the right place (mounted volume)
+    local_dest="/build/target/release/$(basename "$PREBUILT_BINARY")"
+    if [[ "$(realpath "$PREBUILT_BINARY")" != "$(realpath "$local_dest")" ]]; then
+        cp "$PREBUILT_BINARY" /build/target/release/
+    fi
     export SKIP_CARGO_BUILD=1
 fi
 
