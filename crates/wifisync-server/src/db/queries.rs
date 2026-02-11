@@ -197,6 +197,21 @@ pub async fn update_collection_clock(
     Ok(())
 }
 
+/// Update a collection's encrypted_name and updated_at
+pub async fn update_collection_name(
+    pool: &SqlitePool,
+    collection_id: &str,
+    encrypted_name: &[u8],
+) -> ServerResult<()> {
+    sqlx::query("UPDATE collections SET encrypted_name = ?, updated_at = ? WHERE id = ?")
+        .bind(encrypted_name)
+        .bind(Utc::now().to_rfc3339())
+        .bind(collection_id)
+        .execute(pool)
+        .await?;
+    Ok(())
+}
+
 /// Delete a collection
 pub async fn delete_collection(pool: &SqlitePool, collection_id: &str) -> ServerResult<()> {
     sqlx::query("DELETE FROM collections WHERE id = ?")

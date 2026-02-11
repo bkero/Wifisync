@@ -333,10 +333,10 @@ pub async fn push(json: bool) -> Result<()> {
                         }
                     }
                     Err(e) => {
-                        // If it already exists, that's fine
-                        if !e.to_string().contains("already exists") {
-                            tracing::warn!("Failed to create collection {}: {}", collection.name, e);
-                        }
+                        // Collection creation can fail if it already exists on the server
+                        // (e.g. from a prior sync). Treat as non-fatal — the push will
+                        // give a proper error if the collection is truly inaccessible.
+                        tracing::warn!("Failed to create collection {} (may already exist): {}", collection.name, e);
                     }
                 }
             }
@@ -382,9 +382,10 @@ pub async fn push(json: bool) -> Result<()> {
                         }
                     }
                     Err(e) => {
-                        if !e.to_string().contains("already exists") {
-                            tracing::warn!("Failed to create collection {}: {}", collection.name, e);
-                        }
+                        // Collection creation can fail if it already exists on the server
+                        // (e.g. from a prior sync). Treat as non-fatal — the push will
+                        // give a proper error if the collection is truly inaccessible.
+                        tracing::warn!("Failed to create collection {} (may already exist): {}", collection.name, e);
                     }
                 }
             }

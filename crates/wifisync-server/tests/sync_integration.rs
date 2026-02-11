@@ -474,11 +474,41 @@ fn create_test_router(state: AppState) -> axum::Router {
             .map(|arr| arr.iter().filter_map(|v| v.as_u64().map(|n| n as u8)).collect::<Vec<u8>>())
             .unwrap_or_default();
 
-        // Use a placeholder user_id for testing
+        let user_id = req
+            .get("user_id")
+            .and_then(|v| v.as_str())
+            .unwrap_or("test_user");
+
+        // Check if collection already exists
+        let existing: Option<(String,)> =
+            sqlx::query_as("SELECT user_id FROM collections WHERE id = ?")
+                .bind(&id)
+                .fetch_optional(&state.db)
+                .await
+                .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+
+        if let Some((existing_user_id,)) = existing {
+            if existing_user_id == user_id {
+                // Same user — idempotent: update encrypted_name
+                sqlx::query("UPDATE collections SET encrypted_name = ?, updated_at = ? WHERE id = ?")
+                    .bind(&encrypted_name)
+                    .bind(Utc::now().to_rfc3339())
+                    .bind(&id)
+                    .execute(&state.db)
+                    .await
+                    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+                return Ok(Json(serde_json::json!({ "id": id })));
+            } else {
+                // Different user — conflict
+                return Err((StatusCode::CONFLICT, "Collection already exists".to_string()));
+            }
+        }
+
         sqlx::query(
-            "INSERT INTO collections (id, user_id, encrypted_name, vector_clock, updated_at) VALUES (?, 'test_user', ?, '{}', ?)",
+            "INSERT INTO collections (id, user_id, encrypted_name, vector_clock, updated_at) VALUES (?, ?, ?, '{}', ?)",
         )
         .bind(&id)
+        .bind(user_id)
         .bind(&encrypted_name)
         .bind(Utc::now().to_rfc3339())
         .execute(&state.db)
@@ -1188,4 +1218,122 @@ async fn test_legacy_user_reregistration() {
     };
     let resp = client.post("/api/v1/users/register", &register_req).await;
     assert_eq!(resp.status(), 400);
+}
+
+#[tokio::test]
+async fn test_create_duplicate_collection() {
+    let server = TestServer::start().await;
+    let client = TestClient::new(&server.base_url());
+
+    let collection_id = Uuid::new_v4().to_string();
+
+    // Create a collection
+    let create_req = serde_json::json!({
+        "id": collection_id,
+        "encrypted_name": [1, 2, 3],
+        "user_id": "user_a"
+    });
+    let resp = client.post("/api/v1/collections", &create_req).await;
+    assert_eq!(resp.status(), 200);
+
+    // Create the same collection again (same user) — should succeed (idempotent)
+    let create_req = serde_json::json!({
+        "id": collection_id,
+        "encrypted_name": [4, 5, 6],
+        "user_id": "user_a"
+    });
+    let resp = client.post("/api/v1/collections", &create_req).await;
+    assert_eq!(resp.status(), 200);
+
+    let body: serde_json::Value = resp.json().await.unwrap();
+    assert_eq!(body["id"].as_str().unwrap(), collection_id);
+}
+
+#[tokio::test]
+async fn test_create_collection_different_user_conflict() {
+    let server = TestServer::start().await;
+    let client = TestClient::new(&server.base_url());
+
+    let collection_id = Uuid::new_v4().to_string();
+
+    // Create a collection as user_a
+    let create_req = serde_json::json!({
+        "id": collection_id,
+        "encrypted_name": [1, 2, 3],
+        "user_id": "user_a"
+    });
+    let resp = client.post("/api/v1/collections", &create_req).await;
+    assert_eq!(resp.status(), 200);
+
+    // Try to create the same collection as user_b — should return 409
+    let create_req = serde_json::json!({
+        "id": collection_id,
+        "encrypted_name": [4, 5, 6],
+        "user_id": "user_b"
+    });
+    let resp = client.post("/api/v1/collections", &create_req).await;
+    assert_eq!(resp.status(), 409);
+}
+
+#[tokio::test]
+async fn test_push_after_collection_already_exists() {
+    let server = TestServer::start().await;
+    let mut client = TestClient::new(&server.base_url());
+
+    // Register and login
+    let register_req = RegisterRequest {
+        username: "push_dup_coll_user".to_string(),
+        auth_proof: "auth".to_string(),
+        auth_salt: String::new(),
+    };
+    client.post("/api/v1/users/register", &register_req).await;
+
+    let login_req = LoginRequest {
+        username: "push_dup_coll_user".to_string(),
+        auth_proof: "auth".to_string(),
+        device_name: "Test".to_string(),
+    };
+    let resp = client.post("/api/v1/auth/login", &login_req).await;
+    let body: serde_json::Value = resp.json().await.unwrap();
+    let device_id = body["device_id"].as_str().unwrap().to_string();
+    client.set_token(body["token"].as_str().unwrap().to_string());
+
+    let collection_id = Uuid::new_v4();
+
+    // Pre-create the collection on the server (simulating prior sync)
+    let create_req = serde_json::json!({
+        "id": collection_id.to_string(),
+        "encrypted_name": [1, 2, 3]
+    });
+    client.post_and_check("/api/v1/collections", &create_req).await;
+
+    // Creating it again should succeed (idempotent, same default user)
+    let create_req = serde_json::json!({
+        "id": collection_id.to_string(),
+        "encrypted_name": [4, 5, 6]
+    });
+    let resp = client.post("/api/v1/collections", &create_req).await;
+    assert_eq!(resp.status(), 200);
+
+    // Push changes to that collection — should succeed
+    let push_req = serde_json::json!({
+        "device_id": device_id,
+        "changes": [{
+            "id": Uuid::new_v4().to_string(),
+            "collection_id": collection_id.to_string(),
+            "credential_id": Uuid::new_v4().to_string(),
+            "operation": "create",
+            "vector_clock": { "clocks": { &device_id: 1 } },
+            "payload": {
+                "encrypted_data": [10, 20, 30],
+                "nonce": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+            },
+            "device_id": device_id,
+            "timestamp": chrono::Utc::now().to_rfc3339()
+        }]
+    });
+
+    let resp = client.post_and_check("/api/v1/sync/push", &push_req).await;
+    let body: serde_json::Value = resp.json().await.unwrap();
+    assert_eq!(body["accepted_count"], 1);
 }
