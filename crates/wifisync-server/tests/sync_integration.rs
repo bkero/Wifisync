@@ -86,14 +86,14 @@ impl Drop for TestServer {
 #[derive(Clone)]
 struct TestConfig {
     jwt_secret: String,
-    jwt_expiration_hours: u64,
+    jwt_expiration_secs: u64,
 }
 
 impl TestConfig {
     fn new() -> Self {
         Self {
             jwt_secret: "test_secret_key_for_integration_tests_12345".to_string(),
-            jwt_expiration_hours: 24,
+            jwt_expiration_secs: 24 * 3600,
         }
     }
 }
@@ -285,7 +285,7 @@ fn create_test_router(state: AppState) -> axum::Router {
             .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
 
         // Create JWT
-        let exp = Utc::now() + Duration::hours(state.config.jwt_expiration_hours as i64);
+        let exp = Utc::now() + Duration::seconds(state.config.jwt_expiration_secs as i64);
         let claims = serde_json::json!({
             "sub": user_id,
             "device_id": device_id,

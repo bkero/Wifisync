@@ -24,6 +24,7 @@ COPY crates/wifisync-server/Cargo.toml crates/wifisync-server/
 COPY crates/wifisync-core/Cargo.toml crates/wifisync-core/
 COPY crates/wifisync-cli/Cargo.toml crates/wifisync-cli/
 COPY crates/wifisync-jni/Cargo.toml crates/wifisync-jni/
+COPY tests/e2e/Cargo.toml tests/e2e/
 
 # Create dummy source files for dependency caching
 RUN mkdir -p crates/wifisync-sync-protocol/src \
@@ -37,7 +38,9 @@ RUN mkdir -p crates/wifisync-sync-protocol/src \
     && mkdir -p crates/wifisync-cli/src \
     && echo "fn main() {}" > crates/wifisync-cli/src/main.rs \
     && mkdir -p crates/wifisync-jni/src \
-    && echo "pub fn dummy() {}" > crates/wifisync-jni/src/lib.rs
+    && echo "pub fn dummy() {}" > crates/wifisync-jni/src/lib.rs \
+    && mkdir -p tests/e2e/src \
+    && echo "pub fn dummy() {}" > tests/e2e/src/lib.rs
 
 # Build dependencies only (this layer is cached)
 RUN cargo build --release -p wifisync-server 2>/dev/null || true

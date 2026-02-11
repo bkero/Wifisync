@@ -13,8 +13,11 @@ pub struct ServerConfig {
     pub database_url: String,
     /// JWT secret key
     pub jwt_secret: String,
-    /// JWT token expiration in hours
-    pub jwt_expiration_hours: u64,
+    /// JWT token expiration in seconds.
+    ///
+    /// Loaded from `JWT_EXPIRATION_SECONDS` if set, otherwise from
+    /// `JWT_EXPIRATION_HOURS` (converted to seconds). Default: 7 days.
+    pub jwt_expiration_secs: u64,
     /// Bcrypt cost factor (4-31, default 12)
     pub bcrypt_cost: u32,
     /// Allowed CORS origins (empty = allow all)
@@ -46,10 +49,16 @@ impl ServerConfig {
                     tracing::warn!("JWT_SECRET not set or empty, using random secret (not suitable for production)");
                     secret
                 }),
-            jwt_expiration_hours: env::var("JWT_EXPIRATION_HOURS")
+            jwt_expiration_secs: env::var("JWT_EXPIRATION_SECONDS")
                 .ok()
-                .and_then(|h| h.parse().ok())
-                .unwrap_or(24 * 7), // 1 week default
+                .and_then(|s| s.parse().ok())
+                .or_else(|| {
+                    env::var("JWT_EXPIRATION_HOURS")
+                        .ok()
+                        .and_then(|h| h.parse::<u64>().ok())
+                        .map(|h| h * 3600)
+                })
+                .unwrap_or(24 * 7 * 3600), // 1 week default
             bcrypt_cost: {
                 let cost = env::var("BCRYPT_COST")
                     .ok()

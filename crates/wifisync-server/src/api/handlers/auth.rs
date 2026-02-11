@@ -91,10 +91,10 @@ pub async fn login(
         &user.id,
         &device.id,
         &state.config.jwt_secret,
-        state.config.jwt_expiration_hours,
+        state.config.jwt_expiration_secs,
     )?;
 
-    let expires_at = Utc::now() + Duration::hours(state.config.jwt_expiration_hours as i64);
+    let expires_at = Utc::now() + Duration::seconds(state.config.jwt_expiration_secs as i64);
 
     tracing::info!("User logged in: {} (device: {})", user.id, device.id);
 
@@ -124,10 +124,10 @@ pub async fn refresh(
         &claims.sub,
         &claims.device_id,
         &state.config.jwt_secret,
-        state.config.jwt_expiration_hours,
+        state.config.jwt_expiration_secs,
     )?;
 
-    let expires_at = Utc::now() + Duration::hours(state.config.jwt_expiration_hours as i64);
+    let expires_at = Utc::now() + Duration::seconds(state.config.jwt_expiration_secs as i64);
 
     Ok(Json(RefreshResponse { token, expires_at }))
 }

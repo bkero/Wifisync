@@ -6,6 +6,7 @@ members = [
     "crates/wifisync-jni",
     "crates/wifisync-sync-protocol",
     "crates/wifisync-server",
+    "tests/e2e",
 ]
 
 [workspace.package]

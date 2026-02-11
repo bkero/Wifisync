@@ -7,6 +7,7 @@
 # Options:
 #   --keep-emulator    Don't shut down the emulator after tests
 #   --reuse-emulator   Skip AVD creation and emulator boot if already running
+#   --e2e              Run only E2E test classes (LiveSyncE2eTest, InvalidPasswordTest)
 #   --help             Show this help message
 #
 # Environment variables for live sync tests (optional):
@@ -30,6 +31,7 @@ BOOT_TIMEOUT=120
 
 KEEP_EMULATOR=false
 REUSE_EMULATOR=false
+E2E_ONLY=false
 EMULATOR_PID=""
 
 usage() {
@@ -67,6 +69,7 @@ while [ $# -gt 0 ]; do
     case "$1" in
         --keep-emulator)  KEEP_EMULATOR=true ;;
         --reuse-emulator) REUSE_EMULATOR=true; KEEP_EMULATOR=true ;;
+        --e2e)            E2E_ONLY=true ;;
         --help|-h)        usage ;;
         *)                die "Unknown option: $1" ;;
     esac
@@ -155,7 +158,13 @@ fi
 # Run tests
 log "Running instrumented tests..."
 cd "$ANDROID_DIR"
-./gradlew connectedAndroidTest
+if [ "$E2E_ONLY" = true ]; then
+    log "Running E2E test classes only"
+    ./gradlew connectedAndroidTest \
+        -Pandroid.testInstrumentationRunnerArguments.class=com.wifisync.android.LiveSyncE2eTest,com.wifisync.android.InvalidPasswordTest
+else
+    ./gradlew connectedAndroidTest
+fi
 test_exit=$?
 
 # Collect results

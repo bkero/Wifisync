@@ -24,10 +24,12 @@ pub struct Claims {
 }
 
 impl Claims {
-    /// Create new claims for a user and device
-    pub fn new(user_id: String, device_id: String, expiration_hours: u64) -> Self {
+    /// Create new claims for a user and device.
+    ///
+    /// `expiration_secs` is the token lifetime in seconds.
+    pub fn new(user_id: String, device_id: String, expiration_secs: u64) -> Self {
         let now = Utc::now();
-        let exp = now + Duration::hours(expiration_hours as i64);
+        let exp = now + Duration::seconds(expiration_secs as i64);
 
         Self {
             sub: user_id,
@@ -39,14 +41,16 @@ impl Claims {
 
 }
 
-/// Create a JWT token
+/// Create a JWT token.
+///
+/// `expiration_secs` is the token lifetime in seconds.
 pub fn create_token(
     user_id: &str,
     device_id: &str,
     secret: &str,
-    expiration_hours: u64,
+    expiration_secs: u64,
 ) -> Result<String, jsonwebtoken::errors::Error> {
-    let claims = Claims::new(user_id.to_string(), device_id.to_string(), expiration_hours);
+    let claims = Claims::new(user_id.to_string(), device_id.to_string(), expiration_secs);
     let token = encode(
         &Header::default(),
         &claims,
@@ -120,7 +124,7 @@ mod tests {
         let device_id = "device456";
         let secret = "test_secret_key_123";
 
-        let token = create_token(user_id, device_id, secret, 24).unwrap();
+        let token = create_token(user_id, device_id, secret, 24 * 3600).unwrap();
         let claims = validate_token(&token, secret).unwrap();
 
         assert_eq!(claims.sub, user_id);
@@ -130,7 +134,7 @@ mod tests {
 
     #[test]
     fn test_invalid_secret() {
-        let token = create_token("user", "device", "secret1", 24).unwrap();
+        let token = create_token("user", "device", "secret1", 24 * 3600).unwrap();
         let result = validate_token(&token, "secret2");
         assert!(result.is_err());
     }
@@ -159,7 +163,7 @@ mod tests {
     #[test]
     fn test_empty_secret_tokens_differ() {
         // Tokens signed with empty secret should not validate with a real secret
-        let token = create_token("user", "device", "", 24).unwrap();
+        let token = create_token("user", "device", "", 24 * 3600).unwrap();
         let result = validate_token(&token, "real_secret");
         assert!(result.is_err());
     }

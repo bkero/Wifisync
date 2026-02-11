@@ -1,0 +1,63 @@
+# Docker Compose override for E2E testing
+#
+# Usage:
+#   docker compose -f docker-compose.yml -f tests/e2e/docker-compose.e2e.yml up -d
+#
+# This creates a fresh, isolated server instance for E2E tests with:
+# - Separate volume (destroyed between runs)
+# - Low bcrypt cost for fast registration
+# - Short JWT expiry option for token-refresh tests
+
+services:
+  wifisync-server:
+    container_name: wifisync-e2e-server
+    ports:
+      - "${E2E_SERVER_PORT:-18080}:8080"
+    volumes:
+      - wifisync-e2e-data:/data
+    environment:
+      - DATABASE_URL=sqlite:/data/wifisync-e2e.db?mode=rwc
+      - BIND_ADDRESS=0.0.0.0:8080
+      - RUST_LOG=${E2E_RUST_LOG:-info}
+      - JWT_SECRET=e2e-test-secret-not-for-production
+      - JWT_EXPIRATION_HOURS=${E2E_JWT_EXPIRATION_HOURS:-168}
+      - BCRYPT_COST=4
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8080/health || exit 1"]
+      interval: 2s
+      timeout: 5s
+      retries: 15
+      start_period: 5s
+
+  # Second server with very short JWT expiry for token-refresh tests
+  wifisync-server-short-jwt:
+    build:
+      context: ../..
+      dockerfile: Dockerfile
+    image: wifisync-server:latest
+    container_name: wifisync-e2e-server-short-jwt
+    ports:
+      - "${E2E_SHORT_JWT_PORT:-18081}:8080"
+    volumes:
+      - wifisync-e2e-jwt-data:/data
+    environment:
+      - DATABASE_URL=sqlite:/data/wifisync-e2e-jwt.db?mode=rwc
+      - BIND_ADDRESS=0.0.0.0:8080
+      - RUST_LOG=${E2E_RUST_LOG:-info}
+      - JWT_SECRET=e2e-jwt-test-secret
+      - JWT_EXPIRATION_SECONDS=${E2E_JWT_EXPIRATION_SECONDS:-1}
+      - BCRYPT_COST=4
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8080/health || exit 1"]
+      interval: 2s
+      timeout: 5s
+      retries: 15
+      start_period: 5s
+    profiles:
+      - jwt-tests
+
+volumes:
+  wifisync-e2e-data:
+    name: wifisync-e2e-data
+  wifisync-e2e-jwt-data:
+    name: wifisync-e2e-jwt-data
