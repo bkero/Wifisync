@@ -8,6 +8,9 @@ use std::path::Path;
 use anyhow::{Context, Result};
 use console::style;
 use wifisync_core::storage::Storage;
+use wifisync_core::sync::ChangeType;
+
+use super::track_sync_changes;
 
 pub async fn run(input: &Path, password: Option<&str>, install: bool, json: bool) -> Result<()> {
     if !input.exists() {
@@ -34,6 +37,14 @@ pub async fn run(input: &Path, password: Option<&str>, install: bool, json: bool
 
     // Save the imported collection
     storage.save_collection(&collection)?;
+
+    // Track all imported credentials as sync changes
+    let import_changes: Vec<_> = collection
+        .credentials
+        .iter()
+        .map(|c| (collection.id, c.id, ChangeType::Create))
+        .collect();
+    track_sync_changes(&import_changes)?;
 
     // Optionally install all credentials as profiles
     let mut installed_count = 0;

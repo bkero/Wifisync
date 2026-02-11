@@ -363,33 +363,71 @@ pub async fn push(json: bool) -> Result<()> {
             }
         }
     } else {
-        // Subsequent sync: only push pending changes
-        for pending in &state.pending_changes {
-            // Find the credential
-            for collection in &collections {
-                if collection.id == pending.collection_id {
-                    if let Some(credential) = collection.credentials.iter().find(|c| c.id == pending.credential_id) {
-                        // Serialize and encrypt the credential
-                        let credential_json = serde_json::to_vec(credential)?;
-                        let payload = encryption.encrypt_payload(&credential_json)?;
+        // Subsequent sync: ensure any new collections exist on the server
+        let server_collections = client.list_collections().await?;
+        let server_collection_ids: std::collections::HashSet<_> = server_collections
+            .collections
+            .iter()
+            .map(|c| c.id)
+            .collect();
 
-                        let operation = match pending.change_type {
-                            wifisync_core::sync::ChangeType::Create => SyncOperation::Create,
-                            wifisync_core::sync::ChangeType::Update => SyncOperation::Update,
-                            wifisync_core::sync::ChangeType::Delete => SyncOperation::Delete,
-                        };
-
-                        let change = SyncChange::new(
-                            pending.collection_id,
-                            pending.credential_id,
-                            operation,
-                            state.local_clock.clone(),
-                            payload,
-                            config.device_id.clone(),
-                        );
-                        changes.push(change);
+        for collection in &collections {
+            if !server_collection_ids.contains(&collection.id) {
+                let encrypted_name_payload = encryption.encrypt_payload(collection.name.as_bytes())?;
+                let encrypted_name = serde_json::to_vec(&encrypted_name_payload)?;
+                match client.create_collection(Some(collection.id), encrypted_name).await {
+                    Ok(_) => {
+                        if !json {
+                            println!("  Created collection: {}", collection.name);
+                        }
                     }
-                    break;
+                    Err(e) => {
+                        if !e.to_string().contains("already exists") {
+                            tracing::warn!("Failed to create collection {}: {}", collection.name, e);
+                        }
+                    }
+                }
+            }
+        }
+
+        // Push pending changes
+        for pending in &state.pending_changes {
+            if pending.change_type == wifisync_core::sync::ChangeType::Delete {
+                // For deletes, the credential no longer exists locally; use a tombstone
+                state.local_clock.increment(&config.device_id);
+                let change = SyncChange::tombstone(
+                    pending.collection_id,
+                    pending.credential_id,
+                    state.local_clock.clone(),
+                    config.device_id.clone(),
+                );
+                changes.push(change);
+            } else {
+                // Find the credential locally
+                let credential = collections.iter()
+                    .find(|c| c.id == pending.collection_id)
+                    .and_then(|c| c.credentials.iter().find(|cr| cr.id == pending.credential_id));
+
+                if let Some(credential) = credential {
+                    let credential_json = serde_json::to_vec(credential)?;
+                    let payload = encryption.encrypt_payload(&credential_json)?;
+
+                    let operation = match pending.change_type {
+                        wifisync_core::sync::ChangeType::Create => SyncOperation::Create,
+                        wifisync_core::sync::ChangeType::Update => SyncOperation::Update,
+                        wifisync_core::sync::ChangeType::Delete => unreachable!(),
+                    };
+
+                    state.local_clock.increment(&config.device_id);
+                    let change = SyncChange::new(
+                        pending.collection_id,
+                        pending.credential_id,
+                        operation,
+                        state.local_clock.clone(),
+                        payload,
+                        config.device_id.clone(),
+                    );
+                    changes.push(change);
                 }
             }
         }
@@ -412,6 +450,7 @@ pub async fn push(json: bool) -> Result<()> {
     // Update state
     let pushed_ids: Vec<_> = state.pending_changes.iter().map(|c| c.credential_id).collect();
     state.remove_pending(&pushed_ids);
+    state.last_sync = Some(chrono::Utc::now());
     state_manager.save_state(&state)?;
 
     if json {

@@ -4,6 +4,9 @@ use anyhow::Result;
 use console::style;
 use wifisync_core::models::CredentialCollection;
 use wifisync_core::storage::Storage;
+use wifisync_core::sync::ChangeType;
+
+use super::{track_sync_change, track_sync_changes};
 
 pub async fn list(json: bool) -> Result<()> {
     let storage = Storage::new()?;
@@ -209,6 +212,14 @@ pub async fn delete(name: &str, yes: bool, json: bool) -> Result<()> {
         anyhow::bail!("Use --yes to confirm deletion");
     }
 
+    // Track deletions for all credentials in this collection before deleting
+    let delete_changes: Vec<_> = collection
+        .credentials
+        .iter()
+        .map(|c| (collection.id, c.id, ChangeType::Delete))
+        .collect();
+    track_sync_changes(&delete_changes)?;
+
     let deleted = storage.delete_collection(name)?;
 
     if json {
@@ -269,6 +280,7 @@ pub async fn add(collection_name: &str, ssid: &str, json: bool) -> Result<()> {
     let cred_id = credential.id;
     collection.add(credential);
     storage.save_collection(&collection)?;
+    track_sync_change(collection.id, cred_id, ChangeType::Create)?;
 
     if json {
         let output = serde_json::json!({
@@ -302,8 +314,10 @@ pub async fn remove(collection_name: &str, ssid: &str, json: bool) -> Result<()>
         ))?;
 
     let cred_id = cred.id;
+    let coll_id = collection.id;
     collection.remove(cred_id);
     storage.save_collection(&collection)?;
+    track_sync_change(coll_id, cred_id, ChangeType::Delete)?;
 
     if json {
         let output = serde_json::json!({
