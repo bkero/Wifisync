@@ -137,18 +137,18 @@ pub extern "system" fn Java_com_wifisync_android_WifisyncCore_nativeInit(
     let files_dir: String = match env.get_string(&files_dir) {
         Ok(s) => s.into(),
         Err(e) => {
-            tracing::error!("Failed to get files_dir string: {}", e);
+            log::error!("Failed to get files_dir string: {}", e);
             return JNI_FALSE;
         }
     };
 
-    tracing::info!("Initializing Wifisync with files_dir: {}", files_dir);
+    log::info!("Initializing Wifisync with files_dir: {}", files_dir);
 
     // Create storage with the Android files directory
     let storage = match Storage::with_data_dir(std::path::PathBuf::from(&files_dir)) {
         Ok(s) => s,
         Err(e) => {
-            tracing::error!("Failed to create storage: {}", e);
+            log::error!("Failed to create storage: {}", e);
             return JNI_FALSE;
         }
     };
@@ -159,7 +159,7 @@ pub extern "system" fn Java_com_wifisync_android_WifisyncCore_nativeInit(
     };
 
     if CORE.set(core).is_err() {
-        tracing::warn!("Core already initialized");
+        log::warn!("Core already initialized");
     }
 
     JNI_TRUE
@@ -535,20 +535,20 @@ fn sync_login_impl(server_url: &str, username: &str, password: &str) -> String {
             let salt_b64 = base64::engine::general_purpose::STANDARD.encode(salt);
             if let Err(e) = client.register(username, &auth_proof, &salt_b64).await {
                 if !e.to_string().contains("already exists") {
-                    tracing::debug!("Registration failed (may be expected): {}", e);
+                    log::debug!("Registration failed (may be expected): {}", e);
                 }
             }
         }
 
         // Now login
         match client.login(username, &auth_proof, &device_name).await {
-            Ok(resp) => Ok((resp, salt)),
+            Ok(resp) => Ok((resp, salt, auth_proof)),
             Err(e) => Err((format!("Login failed: {e}"), None)),
         }
     });
 
     match result {
-        Ok((login_resp, salt)) => {
+        Ok((login_resp, salt, auth_proof)) => {
             // Save configuration
             let mut config = SyncConfig::new(
                 server_url.to_string(),
@@ -556,6 +556,7 @@ fn sync_login_impl(server_url: &str, username: &str, password: &str) -> String {
                 login_resp.device_id.clone(),
                 salt.to_vec(),
             );
+            config.set_auth_proof(auth_proof);
             config.set_token(login_resp.token, login_resp.expires_at);
 
             if let Err(e) = state_manager.save_config(&config) {
@@ -607,7 +608,7 @@ fn sync_logout_impl() -> String {
         runtime.block_on(async {
             if let Ok(mut client) = SyncClient::from_config(&config) {
                 if let Err(e) = client.logout().await {
-                    tracing::warn!("Failed to logout from server: {}", e);
+                    log::warn!("Failed to logout from server: {}", e);
                 }
             }
         });
@@ -744,6 +745,11 @@ fn sync_push_impl(password: &str) -> String {
         Err(e) => return json_error(&format!("Key derivation failed: {e}")),
     };
 
+    // Verify password matches the one used during login
+    if let Err(e) = config.verify_auth_proof(&encryption.auth_proof()) {
+        return json_error(&e);
+    }
+
     // Build changes
     let mut changes = Vec::new();
 
@@ -780,7 +786,7 @@ fn sync_push_impl(password: &str) -> String {
                     };
                     if let Err(e) = client.create_collection(Some(collection.id), encrypted_name).await {
                         if !e.to_string().contains("already exists") {
-                            tracing::warn!("Failed to create collection {}: {}", collection.name, e);
+                            log::warn!("Failed to create collection {}: {}", collection.name, e);
                         }
                     }
                 }
@@ -885,7 +891,7 @@ fn sync_push_impl(password: &str) -> String {
             }
 
             if let Err(e) = state_manager.save_state(&state) {
-                tracing::warn!("Failed to save state: {}", e);
+                log::warn!("Failed to save state: {}", e);
             }
 
             serde_json::to_string(&ApiResponse::success(SyncPushResponseData {
@@ -941,6 +947,11 @@ fn sync_pull_impl(password: &str) -> String {
         Err(e) => return json_error(&format!("Key derivation failed: {e}")),
     };
 
+    // Verify password matches the one used during login
+    if let Err(e) = config.verify_auth_proof(&encryption.auth_proof()) {
+        return json_error(&e);
+    }
+
     let runtime = get_runtime();
     let result = runtime.block_on(async {
         let client = match SyncClient::from_config(&config) {
@@ -954,18 +965,30 @@ fn sync_pull_impl(password: &str) -> String {
             Some(state.server_clock.clone())
         };
 
-        match client.pull(&config.device_id, since, None).await {
-            Ok(resp) => Ok(resp),
-            Err(e) => Err(format!("Pull failed: {e}")),
-        }
+        let pull_resp = match client.pull(&config.device_id, since, None).await {
+            Ok(resp) => resp,
+            Err(e) => return Err(format!("Pull failed: {e}")),
+        };
+
+        // Also fetch server collection list so we can create missing local collections
+        let server_collections = match client.list_collections().await {
+            Ok(resp) => resp,
+            Err(e) => {
+                log::warn!("Failed to list server collections: {}", e);
+                wifisync_sync_protocol::CollectionsResponse { collections: Vec::new() }
+            }
+        };
+
+        Ok((pull_resp, server_collections))
     });
 
     match result {
-        Ok(resp) => {
+        Ok((resp, server_collections)) => {
             if resp.changes.is_empty() {
                 return serde_json::to_string(&ApiResponse::success(SyncPullResponseData {
                     applied: 0,
                     errors: 0,
+                    error_details: Vec::new(),
                 })).unwrap_or_else(|e| json_error(&e.to_string()));
             }
 
@@ -975,14 +998,29 @@ fn sync_pull_impl(password: &str) -> String {
                 Err(e) => return json_error(&format!("Failed to load collections: {e}")),
             };
 
+            // Create any missing local collections from the server's list
+            for server_coll in &server_collections.collections {
+                if !collections.iter().any(|c| c.id == server_coll.id) {
+                    // Decrypt collection name from server
+                    let name = decrypt_collection_name(&server_coll.encrypted_name, &encryption)
+                        .unwrap_or_else(|_| format!("Collection {}", server_coll.id));
+                    log::info!("Creating local collection from server: {}", name);
+                    let mut coll = wifisync_core::CredentialCollection::new(name);
+                    coll.id = server_coll.id;
+                    collections.push(coll);
+                }
+            }
+
             let mut applied = 0;
             let mut errors = 0;
+            let mut error_details = Vec::new();
 
             for change in &resp.changes {
                 match apply_sync_change(&mut collections, change, &encryption) {
                     Ok(()) => applied += 1,
                     Err(e) => {
-                        tracing::warn!("Failed to apply change {}: {}", change.id, e);
+                        log::warn!("Failed to apply change {}: {}", change.id, e);
+                        error_details.push(e);
                         errors += 1;
                     }
                 }
@@ -997,12 +1035,13 @@ fn sync_pull_impl(password: &str) -> String {
             state.server_clock = resp.server_clock;
             state.last_sync = Some(chrono::Utc::now());
             if let Err(e) = state_manager.save_state(&state) {
-                tracing::warn!("Failed to save state: {}", e);
+                log::warn!("Failed to save state: {}", e);
             }
 
             serde_json::to_string(&ApiResponse::success(SyncPullResponseData {
                 applied,
                 errors,
+                error_details,
             })).unwrap_or_else(|e| json_error(&e.to_string()))
         }
         Err(e) => json_error(&e),
@@ -1042,6 +1081,15 @@ fn apply_sync_change(
     }
 
     Ok(())
+}
+
+/// Decrypt a collection's encrypted_name from the server
+fn decrypt_collection_name(encrypted_name: &[u8], encryption: &SyncEncryption) -> Result<String, String> {
+    use wifisync_sync_protocol::ChangePayload;
+    let payload: ChangePayload = serde_json::from_slice(encrypted_name)
+        .map_err(|e| format!("Failed to parse encrypted name: {e}"))?;
+    encryption.decrypt_string(&payload)
+        .map_err(|e| format!("Failed to decrypt collection name: {e}"))
 }
 
 /// List devices (stub - returns empty list as there's no server endpoint yet)
@@ -1239,6 +1287,8 @@ struct SyncPushResponseData {
 struct SyncPullResponseData {
     applied: usize,
     errors: usize,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    error_details: Vec<String>,
 }
 
 /// Device info data

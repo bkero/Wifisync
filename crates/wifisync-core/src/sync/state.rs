@@ -21,6 +21,9 @@ pub struct SyncConfig {
     pub device_id: String,
     /// Salt for key derivation (stored locally, used with password)
     pub key_salt: Vec<u8>,
+    /// Auth proof from login (used to verify password before push/pull)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub auth_proof: Option<String>,
     /// Current JWT token (optional, refreshed on each sync)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub token: Option<String>,
@@ -42,9 +45,27 @@ impl SyncConfig {
             username,
             device_id,
             key_salt,
+            auth_proof: None,
             token: None,
             token_expires: None,
         }
+    }
+
+    /// Set the auth proof (stored during login for password verification)
+    pub fn set_auth_proof(&mut self, auth_proof: String) {
+        self.auth_proof = Some(auth_proof);
+    }
+
+    /// Verify that a password-derived auth proof matches the stored one.
+    /// Returns Ok(()) if there's no stored proof (legacy config) or if it matches.
+    /// Returns Err with a message if it doesn't match.
+    pub fn verify_auth_proof(&self, auth_proof: &str) -> std::result::Result<(), String> {
+        if let Some(stored) = &self.auth_proof {
+            if stored != auth_proof {
+                return Err("Password does not match the one used during login. Please use the same master password.".to_string());
+            }
+        }
+        Ok(())
     }
 
     /// Check if we have a valid (non-expired) token

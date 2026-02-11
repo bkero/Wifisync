@@ -303,7 +303,12 @@ fun SyncScreen() {
                                 }
                                 else -> {
                                     val r = result as SyncPullResponse
-                                    "Pulled: ${r.applied} applied, ${r.errors} errors"
+                                    val details = r.error_details?.distinct()?.joinToString(", ") ?: ""
+                                    if (r.errors > 0 && details.isNotEmpty()) {
+                                        "Pulled: ${r.applied} applied, ${r.errors} errors ($details)"
+                                    } else {
+                                        "Pulled: ${r.applied} applied, ${r.errors} errors"
+                                    }
                                 }
                             }
                             loadStatus()

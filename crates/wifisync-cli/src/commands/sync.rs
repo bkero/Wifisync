@@ -118,6 +118,7 @@ pub async fn login(server_url: &str, username: &str, json: bool) -> Result<()> {
         login_resp.device_id.clone(),
         salt.to_vec(),
     );
+    config.set_auth_proof(auth_proof);
     config.set_token(login_resp.token, login_resp.expires_at);
 
     state_manager.save_config(&config)?;
@@ -299,6 +300,11 @@ pub async fn push(json: bool) -> Result<()> {
     };
 
     let encryption = SyncEncryption::from_password(&password, &config.key_salt)?;
+
+    // Verify password matches the one used during login
+    if let Err(e) = config.verify_auth_proof(&encryption.auth_proof()) {
+        bail!("{e}");
+    }
 
     // Create client
     let client = SyncClient::from_config(&config)?;
@@ -500,6 +506,11 @@ pub async fn pull(json: bool) -> Result<()> {
     };
 
     let encryption = SyncEncryption::from_password(&password, &config.key_salt)?;
+
+    // Verify password matches the one used during login
+    if let Err(e) = config.verify_auth_proof(&encryption.auth_proof()) {
+        bail!("{e}");
+    }
 
     // Create client
     let client = SyncClient::from_config(&config)?;

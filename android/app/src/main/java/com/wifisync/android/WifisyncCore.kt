@@ -354,7 +354,8 @@ data class SyncPushResponse(
  */
 data class SyncPullResponse(
     val applied: Int,
-    val errors: Int
+    val errors: Int,
+    val error_details: List<String>? = null
 )
 
 /**
