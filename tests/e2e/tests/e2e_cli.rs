@@ -511,6 +511,98 @@ fn test_list_conflicts_empty() {
 }
 
 // =============================================================================
+// 6b. Additional Collection Tests
+// =============================================================================
+
+#[test]
+fn test_show_nonexistent_collection() {
+    let env = setup();
+    let show = env.collection_show("no_such_collection");
+    show.assert_failure();
+    assert!(
+        show.stdout_contains("not found") || show.stderr_contains("not found")
+            || show.stdout_contains("Not found") || show.stderr_contains("Not found"),
+        "Expected 'not found' error, got stdout={}, stderr={}",
+        show.stdout,
+        show.stderr
+    );
+}
+
+#[test]
+fn test_delete_nonexistent_collection() {
+    let env = setup();
+    let del = env.collection_delete("no_such_collection");
+    del.assert_failure();
+}
+
+#[test]
+fn test_collection_create_with_description() {
+    let env = setup();
+    let res = env.collection_create_with_desc("described", "A test collection");
+    res.assert_success();
+
+    let show = env.collection_show("described");
+    show.assert_success();
+    let j = show.json();
+    assert_eq!(j["name"], "described");
+    assert_eq!(j["description"], "A test collection");
+}
+
+// =============================================================================
+// 6c. Push/Pull Cross-Device Verification
+// =============================================================================
+
+#[test]
+fn test_pull_creates_missing_collections() {
+    let env = setup();
+    env.login().assert_success();
+
+    // Push two collections from device A
+    let f1 = env.write_fixture_collection("coll_alpha", &[("AlphaNet", "apass")]);
+    let f2 = env.write_fixture_collection("coll_beta", &[("BetaNet", "bpass")]);
+    env.import_collection(&f1).assert_success();
+    env.import_collection(&f2).assert_success();
+    env.push().assert_success();
+
+    // Device B: fresh login, pull
+    let env_b = env.second_device();
+    env_b.login().assert_success();
+    let pull = env_b.pull();
+    pull.assert_success();
+    let j = pull.json();
+    assert_eq!(j["status"], "success");
+    let errors = j.get("errors").and_then(|v| v.as_u64()).unwrap_or(0);
+    assert_eq!(errors, 0, "Pull should have 0 errors");
+}
+
+#[test]
+fn test_bidirectional_sync() {
+    let env_a = setup();
+    let env_b = env_a.second_device();
+
+    // Device A: push data
+    env_a.login().assert_success();
+    let f1 = env_a.write_fixture_collection("bidir_a", &[("NetA", "passA")]);
+    env_a.import_collection(&f1).assert_success();
+    env_a.push().assert_success();
+
+    // Device B: login, pull (gets A's data), push its own data
+    env_b.login().assert_success();
+    env_b.pull().assert_success();
+    let f2 = env_b.write_fixture_collection("bidir_b", &[("NetB", "passB")]);
+    env_b.import_collection(&f2).assert_success();
+    env_b.push().assert_success();
+
+    // Device A: pull (gets B's data)
+    let pull_a = env_a.pull();
+    pull_a.assert_success();
+    let j = pull_a.json();
+    assert_eq!(j["status"], "success");
+    let errors = j.get("errors").and_then(|v| v.as_u64()).unwrap_or(0);
+    assert_eq!(errors, 0, "Device A pull should have 0 errors");
+}
+
+// =============================================================================
 // 7. Edge Cases
 // =============================================================================
 
