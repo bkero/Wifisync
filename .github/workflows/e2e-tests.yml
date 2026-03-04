@@ -71,7 +71,7 @@ jobs:
         run: cargo test --test e2e_cli -- --test-threads=1
         env:
           E2E_SERVER_URL: http://localhost:18080
-          E2E_CLI_BINARY: ./target/release/wifisync
+          E2E_CLI_BINARY: ${{ github.workspace }}/target/release/wifisync
 
       - name: Server logs (on failure)
         if: failure()

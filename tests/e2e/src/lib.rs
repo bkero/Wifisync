@@ -97,9 +97,10 @@ impl TestEnv {
         let server_url =
             std::env::var("E2E_SERVER_URL").unwrap_or_else(|_| "http://localhost:18080".into());
         let cli_binary = std::env::var("E2E_CLI_BINARY").unwrap_or_else(|_| {
-            // Fall back to looking in target/release
+            // Fall back to workspace root's target/release.
+            // CARGO_MANIFEST_DIR is tests/e2e/, so go up two levels to reach workspace root.
             let mut p = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-            p.push("target/release/wifisync");
+            p.push("../../target/release/wifisync");
             p.to_string_lossy().into()
         });
 
